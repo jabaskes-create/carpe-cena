@@ -16,6 +16,14 @@ const PLATFORM_LABELS = {
   thefork: 'TheFork',
 };
 
+function formatTime(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'pm' : 'am';
+  const hour = h > 12 ? h - 12 : h === 0 ? 12 : h;
+  return `${hour}:${m.toString().padStart(2, '0')}${ampm}`;
+}
+
 export default function WatchCard({ watch, onDelete, isPast }) {
   const dateStr = new Date(watch.date + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
@@ -28,6 +36,10 @@ export default function WatchCard({ watch, onDelete, isPast }) {
   const statusLabel = watch.status === 'available' ? '✓ Available!'
     : watch.status === 'booked' ? '✓ Booked'
     : '👁 Watching';
+
+  const timeRange = watch.timeFrom && watch.timeTo
+    ? `${formatTime(watch.timeFrom)} – ${formatTime(watch.timeTo)}`
+    : null;
 
   return (
     <div style={{
@@ -57,8 +69,13 @@ export default function WatchCard({ watch, onDelete, isPast }) {
         <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
           {watch.city} · {dateStr} · {watch.partySize} {watch.partySize === 1 ? 'guest' : 'guests'}
         </p>
+        {timeRange && (
+          <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: 3 }}>
+            🕐 {timeRange}
+          </p>
+        )}
         {watch.autoBook && (
-          <p style={{ color: 'var(--gold-dim)', fontSize: 12, marginTop: 4 }}>⚡ Auto-book enabled</p>
+          <p style={{ color: 'var(--gold-dim)', fontSize: 12, marginTop: 3 }}>⚡ Auto-book enabled</p>
         )}
       </div>
 
