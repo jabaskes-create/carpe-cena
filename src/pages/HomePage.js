@@ -37,8 +37,14 @@ export default function HomePage() {
     await deleteDoc(doc(db, 'watches', id));
   };
 
-  const active = watches.filter(w => new Date(w.date) >= new Date(new Date().toDateString()));
-  const past = watches.filter(w => new Date(w.date) < new Date(new Date().toDateString()));
+  // Only show watches whose target date hasn't passed yet.
+  // Once the date passes, the watch quietly drops off the list —
+  // no need to keep cluttering the screen with old entries.
+  const todayStart = new Date(new Date().toDateString());
+  const upcoming = watches.filter(w => new Date(w.date) >= todayStart);
+
+  const watching = upcoming.filter(w => w.status === 'watching');
+  const completed = upcoming.filter(w => w.status === 'available' || w.status === 'booked');
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '24px 16px' }}>
@@ -65,7 +71,7 @@ export default function HomePage() {
         + Watch a Restaurant
       </button>
 
-      {active.length === 0 ? (
+      {upcoming.length === 0 ? (
         <div style={{
           textAlign: 'center', padding: '48px 24px',
           color: 'var(--text-dim)', border: '1px dashed var(--border)',
@@ -76,20 +82,35 @@ export default function HomePage() {
           <p style={{ fontSize: 13, marginTop: 6 }}>Add a restaurant to start monitoring availability.</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {active.map(w => <WatchCard key={w.id} watch={w} onDelete={deleteWatch} />)}
-        </div>
-      )}
-
-      {past.length > 0 && (
-        <div style={{ marginTop: 40 }}>
-          <p style={{ color: 'var(--text-dim)', fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>
-            Past
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, opacity: 0.5 }}>
-            {past.map(w => <WatchCard key={w.id} watch={w} onDelete={deleteWatch} isPast />)}
+        <>
+          {/* Watching section */}
+          <div style={{ marginBottom: watching.length && completed.length ? 32 : 0 }}>
+            <p style={{ color: 'var(--text-dim)', fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>
+              👁 Watching {watching.length > 0 && `(${watching.length})`}
+            </p>
+            {watching.length === 0 ? (
+              <p style={{ color: 'var(--text-dim)', fontSize: 13, fontStyle: 'italic' }}>
+                Nothing currently being watched.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {watching.map(w => <WatchCard key={w.id} watch={w} onDelete={deleteWatch} />)}
+              </div>
+            )}
           </div>
-        </div>
+
+          {/* Completed section */}
+          {completed.length > 0 && (
+            <div>
+              <p style={{ color: 'var(--green)', fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>
+                ✓ Completed ({completed.length})
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {completed.map(w => <WatchCard key={w.id} watch={w} onDelete={deleteWatch} />)}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {showAdd && <AddWatchModal onSave={addWatch} onClose={() => setShowAdd(false)} />}
