@@ -11,10 +11,12 @@ const db = getFirestore();
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export default async function handler(req, res) {
+  console.log('Headers received:', JSON.stringify(req.headers));
+  console.log('CRON_SECRET env:', process.env.CRON_SECRET);
+  
   if (req.headers['x-cron-secret'] !== process.env.CRON_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-
   const today = new Date().toISOString().split('T')[0];
 
   const snap = await db.collection('watches')
