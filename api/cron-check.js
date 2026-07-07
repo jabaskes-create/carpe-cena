@@ -2,6 +2,8 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { Resend } from 'resend';
 import { checkResy } from './check-resy.js';
+import { checkSevenRooms } from './check-sevenrooms.js';
+import { checkSevenRooms } from './check-sevenrooms.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
@@ -55,7 +57,7 @@ export default async function handler(req, res) {
     } else if (watch.platform === 'opentable') {
       // Date math — notify when window opens, link directly to OpenTable search
       if (checkWindowDays(watch, today, 30)) {
-        const bookingUrl = `https://www.opentable.com/s?covers=${watch.partySize}&dateTime=${watch.date}T${watch.timeFrom || '19:00'}&term=${encodeURIComponent(watch.restaurant)}&location=${encodeURIComponent(watch.city)}`;
+        const bookingUrl = watch.bookingUrl || `https://www.opentable.com/s?covers=${watch.partySize}&dateTime=${watch.date}T${watch.timeFrom || '19:00'}&term=${encodeURIComponent(watch.restaurant)}&location=${encodeURIComponent(watch.city)}`;
         result = { available: true, bookingUrl, windowJustOpened: true };
       }
 
@@ -66,7 +68,10 @@ export default async function handler(req, res) {
       }
 
     }
-    // SevenRooms, Tock — coming next session
+    } else if (watch.platform === 'sevenrooms') {
+      result = await checkSevenRooms(watch);
+
+    // Tock — coming next session
 
     if (result.available) {
       const email = watch.email;
@@ -76,6 +81,8 @@ export default async function handler(req, res) {
           weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
         });
 
+        // Use manually entered booking URL if provided
+        if (watch.bookingUrl) result.bookingUrl = watch.bookingUrl;
         const isWindowAlert = result.windowJustOpened;
 
         await resend.emails.send({

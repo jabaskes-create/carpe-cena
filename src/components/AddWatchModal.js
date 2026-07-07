@@ -132,6 +132,10 @@ export default function AddWatchModal({ onSave, onClose }) {
     platform: 'resy',
     autoBook: false,
     windowDays: '',
+    bookingUrl: '',
+    venueSlug: '',
+    venueSlug: '',
+    bookingUrl: '',
     timeFrom: '18:00',
     timeTo: '21:00',
   });
@@ -223,6 +227,63 @@ export default function AddWatchModal({ onSave, onClose }) {
               </p>
             </div>
           )}
+
+          {form.platform === 'sevenrooms' && (
+            <div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                SevenRooms venue slug
+              </p>
+              <input
+                placeholder="e.g. wiltons or nobu-london (from booking URL)"
+                value={form.venueSlug}
+                onChange={e => set('venueSlug', e.target.value)}
+              />
+              <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 6 }}>
+                Found in the URL: sevenrooms.com/reservations/create/<strong>venue-slug</strong>
+              </p>
+            </div>
+          )}
+
+          <div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              Booking URL <span style={{ color: 'var(--text-dim)', fontWeight: 'normal' }}>(optional)</span>
+            </p>
+            <input
+              placeholder="Paste direct booking link for email button"
+              value={form.bookingUrl}
+              onChange={e => set('bookingUrl', e.target.value)}
+            />
+          </div>
+
+          {form.platform === 'sevenrooms' && (
+            <div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                Venue slug (optional)
+              </p>
+              <input
+                placeholder="e.g. wiltons (from the SevenRooms URL)"
+                value={form.venueSlug}
+                onChange={e => set('venueSlug', e.target.value)}
+              />
+              <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 6 }}>
+                Found in: sevenrooms.com/reservations/create/<strong>venue-slug</strong>
+              </p>
+            </div>
+          )}
+
+          <div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              Booking URL (optional)
+            </p>
+            <input
+              placeholder="Paste direct link to restaurant's booking page"
+              value={form.bookingUrl}
+              onChange={e => set('bookingUrl', e.target.value)}
+            />
+            <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 6 }}>
+              Used in the email instead of a constructed link.
+            </p>
+          </div>
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-secondary)', fontSize: 14, cursor: 'pointer' }}>
             <input
