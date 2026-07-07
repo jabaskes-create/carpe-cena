@@ -22,6 +22,21 @@ function formatTime(t) {
   return `${hour}:${m.toString().padStart(2, '0')}${ampm}`;
 }
 
+// Extracts the venue slug from a SevenRooms URL
+// e.g. https://www.sevenrooms.com/reservations/create/wiltons?... -> "wiltons"
+// e.g. https://www.sevenrooms.com/explore/wiltons/reservations/... -> "wiltons"
+function extractSevenRoomsSlug(url) {
+  if (!url) return '';
+  try {
+    const match = url.match(/sevenrooms\.com\/(?:reservations\/create|explore)\/([a-z0-9-]+)/i);
+    if (match) return match[1];
+    // Fallback: check ?venues= query param
+    const venuesMatch = url.match(/[?&]venues=([a-z0-9-]+)/i);
+    if (venuesMatch) return venuesMatch[1];
+  } catch (e) {}
+  return '';
+}
+
 // Mini calendar component
 function CalendarPicker({ value, onChange }) {
   const today = new Date();
@@ -134,14 +149,19 @@ export default function AddWatchModal({ onSave, onClose }) {
     windowDays: '',
     bookingUrl: '',
     venueSlug: '',
-    venueSlug: '',
-    bookingUrl: '',
     timeFrom: '18:00',
     timeTo: '21:00',
   });
   const [saving, setSaving] = useState(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // Special handler for the SevenRooms booking URL —
+  // auto-extracts the venue slug so the person never has to find it manually
+  const setSevenRoomsUrl = (url) => {
+    const slug = extractSevenRoomsSlug(url);
+    setForm(f => ({ ...f, bookingUrl: url, venueSlug: slug || f.venueSlug }));
+  };
 
   const valid = form.restaurant.trim() && form.city.trim() && form.date;
 
@@ -228,62 +248,34 @@ export default function AddWatchModal({ onSave, onClose }) {
             </div>
           )}
 
-          {form.platform === 'sevenrooms' && (
+          {form.platform === 'sevenrooms' ? (
             <div>
               <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                SevenRooms venue slug
+                SevenRooms link
               </p>
               <input
-                placeholder="e.g. wiltons or nobu-london (from booking URL)"
-                value={form.venueSlug}
-                onChange={e => set('venueSlug', e.target.value)}
+                placeholder="Paste the restaurant's SevenRooms booking link"
+                value={form.bookingUrl}
+                onChange={e => setSevenRoomsUrl(e.target.value)}
               />
               <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 6 }}>
-                Found in the URL: sevenrooms.com/reservations/create/<strong>venue-slug</strong>
+                {form.venueSlug
+                  ? `✓ Found venue: ${form.venueSlug}`
+                  : "Paste any sevenrooms.com link for this restaurant — we'll figure out the rest."}
               </p>
             </div>
-          )}
-
-          <div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-              Booking URL <span style={{ color: 'var(--text-dim)', fontWeight: 'normal' }}>(optional)</span>
-            </p>
-            <input
-              placeholder="Paste direct booking link for email button"
-              value={form.bookingUrl}
-              onChange={e => set('bookingUrl', e.target.value)}
-            />
-          </div>
-
-          {form.platform === 'sevenrooms' && (
+          ) : (
             <div>
               <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                Venue slug (optional)
+                Booking URL <span style={{ color: 'var(--text-dim)', fontWeight: 'normal' }}>(optional)</span>
               </p>
               <input
-                placeholder="e.g. wiltons (from the SevenRooms URL)"
-                value={form.venueSlug}
-                onChange={e => set('venueSlug', e.target.value)}
+                placeholder="Paste direct booking link for email button"
+                value={form.bookingUrl}
+                onChange={e => set('bookingUrl', e.target.value)}
               />
-              <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 6 }}>
-                Found in: sevenrooms.com/reservations/create/<strong>venue-slug</strong>
-              </p>
             </div>
           )}
-
-          <div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-              Booking URL (optional)
-            </p>
-            <input
-              placeholder="Paste direct link to restaurant's booking page"
-              value={form.bookingUrl}
-              onChange={e => set('bookingUrl', e.target.value)}
-            />
-            <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 6 }}>
-              Used in the email instead of a constructed link.
-            </p>
-          </div>
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-secondary)', fontSize: 14, cursor: 'pointer' }}>
             <input
