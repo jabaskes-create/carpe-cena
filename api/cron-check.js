@@ -79,7 +79,7 @@ export default async function handler(req, res) {
         const isWindowAlert = result.windowJustOpened;
 
         await resend.emails.send({
-          from: 'Carpe Cena <noreply@yourdomain.com>',
+          from: 'Carpe Cena <noreply@gullivertravels.app>',
           to: email,
           subject: isWindowAlert
             ? `🍽️ Reservations now open: ${watch.restaurant} on ${dateStr}`
