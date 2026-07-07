@@ -63,6 +63,7 @@ export async function checkSevenRooms(watch) {
       const bookingUrl = `https://www.sevenrooms.com/reservations/create/${slug}`;
       return {
         available: true,
+        reason: `Found ${allSlots.length} slot${allSlots.length === 1 ? '' : 's'}: ${allSlots.join(', ')}`,
         slots: allSlots,
         bookingUrl,
       };

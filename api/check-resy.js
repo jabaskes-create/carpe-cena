@@ -39,10 +39,10 @@ export async function checkResy(watch) {
 
     if (slots && slots.length > 0) {
       const bookingUrl = `https://resy.com/cities/${encodeURIComponent(city.toLowerCase())}/${venue.url_slug || ''}`;
-      return { available: true, slots: slots.length, bookingUrl };
+      return { available: true, reason: `Found ${slots.length} open slot${slots.length === 1 ? '' : 's'}`, slots: slots.length, bookingUrl };
     }
 
-    return { available: false };
+    return { available: false, reason: 'Found the restaurant, but no open slots for that date/party size' };
   } catch (err) {
     return { available: false, reason: err.message };
   }
