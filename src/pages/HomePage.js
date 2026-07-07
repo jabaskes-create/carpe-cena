@@ -27,6 +27,7 @@ export default function HomePage() {
     await addDoc(collection(db, 'watches'), {
       ...data,
       uid: user.uid,
+      email: user.email,
       status: 'watching',
       createdAt: serverTimestamp(),
     });

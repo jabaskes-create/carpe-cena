@@ -69,8 +69,7 @@ export default async function handler(req, res) {
     // SevenRooms, Tock — coming next session
 
     if (result.available) {
-      const userDoc = await db.collection('users').doc(watch.uid).get();
-      const email = userDoc.data()?.email || watch.email;
+      const email = watch.email;
 
       if (email) {
         const dateStr = new Date(watch.date + 'T12:00:00').toLocaleDateString('en-US', {
