@@ -8,7 +8,7 @@ export async function checkSevenRooms(watch) {
     // Use venueSlug if provided, otherwise derive from restaurant name
     const slug = venueSlug || restaurant.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
-    // Convert timeFrom to minutes from midnight for halo comparison
+    // Convert timeFrom to minutes from midnight
     const [fromH, fromM] = (timeFrom || '17:00').split(':').map(Number);
     const [toH, toM] = (timeTo || '22:00').split(':').map(Number);
     const fromMins = fromH * 60 + fromM;
@@ -20,7 +20,7 @@ export async function checkSevenRooms(watch) {
     const midM = (midMins % 60).toString().padStart(2, '0');
     const timeSlot = `${midH}:${midM}`;
 
-    // halo_size_interval=16 means check ±2 hours (16 x 15min intervals)
+    // halo_size_interval=16 means check a wide window around the target time
     const url = `https://www.sevenrooms.com/api-yoa/availability/widget/range?venue=${slug}&time_slot=${timeSlot}&party_size=${partySize}&halo_size_interval=16&start_date=${date}&num_days=1&channel=SEVENROOMS_WIDGET`;
 
     const res = await fetch(url, {
@@ -36,34 +36,39 @@ export async function checkSevenRooms(watch) {
     }
 
     const data = await res.json();
-    console.log('SevenRooms raw response:', JSON.stringify(data).slice(0, 2000));
 
-    // Response structure: data.data.availability is an object keyed by date
-    const dateAvail = data?.data?.availability?.[date];
-    if (!dateAvail) {
+    // Response structure: data.data.availability[date] is an ARRAY of shifts
+    // Each shift has a `times` array of slot objects: { time, type, time_iso, ... }
+    const shifts = data?.data?.availability?.[date];
+    if (!shifts || !Array.isArray(shifts)) {
       return { available: false, reason: 'No availability data for date' };
     }
 
-    // Filter time slots within the preferred window
-    const slots = Object.entries(dateAvail)
-      .filter(([time, slotData]) => {
-        if (!slotData?.time_iso) return false;
-        const [h, m] = time.split(':').map(Number);
+    // Flatten all bookable time slots across all shifts (Lunch, Dinner, etc.)
+    const allSlots = [];
+    for (const shift of shifts) {
+      if (shift.is_closed) continue;
+      const times = shift.times || [];
+      for (const slot of times) {
+        if (slot.type !== 'book') continue; // skip non-bookable (e.g. waitlist, notify)
+        const [h, m] = slot.time.split(':').map(Number);
         const slotMins = h * 60 + m;
-        return slotMins >= fromMins && slotMins <= toMins;
-      })
-      .filter(([, slotData]) => slotData?.status === 'available' || slotData?.inventory > 0);
+        if (slotMins >= fromMins && slotMins <= toMins) {
+          allSlots.push(slot.time);
+        }
+      }
+    }
 
-    if (slots.length > 0) {
+    if (allSlots.length > 0) {
       const bookingUrl = `https://www.sevenrooms.com/reservations/create/${slug}`;
       return {
         available: true,
-        slots: slots.map(([time]) => time),
+        slots: allSlots,
         bookingUrl,
       };
     }
 
-    return { available: false, reason: 'No slots in preferred time window' };
+    return { available: false, reason: 'No bookable slots in preferred time window' };
 
   } catch (err) {
     console.error('SevenRooms check error:', err.message);
