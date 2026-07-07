@@ -78,6 +78,10 @@ export default async function handler(req, res) {
 
     } else if (watch.platform === 'sevenrooms') {
       result = await checkSevenRooms(watch);
+      // If we successfully guessed the venue slug, save it so future checks don't have to guess
+      if (result.confirmedSlug && !watch.venueSlug) {
+        await db.collection('watches').doc(watch.id).update({ venueSlug: result.confirmedSlug });
+      }
     }
     // Tock — coming next session
 

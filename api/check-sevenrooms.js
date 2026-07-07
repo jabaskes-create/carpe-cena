@@ -61,7 +61,11 @@ async function checkOneDate(watch, date, slug, fromMins, toMins) {
 export async function checkSevenRooms(watch) {
   try {
     const { restaurant, date, timeFrom, timeTo, venueSlug, flexDays } = watch;
+    // Try the provided slug first; if none, guess from the restaurant name.
+    // Guessing isn't guaranteed to work, but it costs nothing to try —
+    // SevenRooms will tell us plainly if the venue doesn't exist.
     const slug = venueSlug || restaurant.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const wasGuessed = !venueSlug;
 
     const [fromH, fromM] = (timeFrom || '17:00').split(':').map(Number);
     const [toH, toM] = (timeTo || '22:00').split(':').map(Number);
@@ -78,29 +82,38 @@ export async function checkSevenRooms(watch) {
       if (!result.ok) {
         // If the very first date fails outright, surface the error;
         // otherwise just skip this date and keep checking the range
-        if (i === 0) return { available: false, reason: result.friendlyReason || `SevenRooms returned ${result.httpStatus}` };
+        if (i === 0) {
+          const reason = wasGuessed
+            ? `Guessed "${slug}" as the venue, but that didn't work — paste this restaurant's direct SevenRooms link to fix it`
+            : (result.friendlyReason || `SevenRooms returned ${result.httpStatus}`);
+          return { available: false, reason };
+        }
         continue;
       }
 
       if (result.slots.length > 0) {
         const dateLabel = new Date(checkDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        const guessNote = wasGuessed ? ` (guessed venue "${slug}" — correct!)` : '';
         return {
           available: true,
           reason: numDays > 1
-            ? `Found ${result.slots.length} slot${result.slots.length === 1 ? '' : 's'} on ${dateLabel}: ${result.slots.join(', ')}`
-            : `Found ${result.slots.length} slot${result.slots.length === 1 ? '' : 's'}: ${result.slots.join(', ')}`,
+            ? `Found ${result.slots.length} slot${result.slots.length === 1 ? '' : 's'} on ${dateLabel}: ${result.slots.join(', ')}${guessNote}`
+            : `Found ${result.slots.length} slot${result.slots.length === 1 ? '' : 's'}: ${result.slots.join(', ')}${guessNote}`,
           slots: result.slots,
           matchedDate: checkDate,
           bookingUrl,
+          confirmedSlug: wasGuessed ? slug : undefined,
         };
       }
     }
 
+    const guessNote = wasGuessed ? ` (guessed venue "${slug}" — correct, just nothing open)` : '';
     return {
       available: false,
-      reason: numDays > 1
+      reason: (numDays > 1
         ? `Checked ${numDays} days — no slots in your time window on any of them`
-        : 'No bookable slots in preferred time window',
+        : 'No bookable slots in preferred time window') + guessNote,
+      confirmedSlug: wasGuessed ? slug : undefined,
     };
 
   } catch (err) {

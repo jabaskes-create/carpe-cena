@@ -76,6 +76,9 @@ export default async function handler(req, res) {
 
   } else if (watch.platform === 'sevenrooms') {
     result = await checkSevenRooms(watch);
+    if (result.confirmedSlug && !watch.venueSlug) {
+      await db.collection('watches').doc(watch.id).update({ venueSlug: result.confirmedSlug });
+    }
   }
 
   return res.status(200).json({
