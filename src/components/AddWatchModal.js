@@ -151,6 +151,7 @@ export default function AddWatchModal({ onSave, onClose }) {
     venueSlug: '',
     timeFrom: '18:00',
     timeTo: '21:00',
+    flexDays: 1,
   });
   const [saving, setSaving] = useState(false);
 
@@ -204,6 +205,33 @@ export default function AddWatchModal({ onSave, onClose }) {
 
           {/* Calendar picker */}
           <CalendarPicker value={form.date} onChange={v => set('date', v)} />
+
+          {/* Flexible date range */}
+          <div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              Flexible dates
+            </p>
+            <select value={form.flexDays} onChange={e => set('flexDays', Number(e.target.value))}>
+              <option value={1}>Just this date</option>
+              <option value={2}>This date, +1 day (2 days)</option>
+              <option value={3}>This date, +2 days (3 days)</option>
+              <option value={4}>This date, +3 days (4 days)</option>
+              <option value={5}>This date, +4 days (5 days)</option>
+              <option value={7}>This date, +6 days (1 week)</option>
+              <option value={10}>This date, +9 days (10 days)</option>
+              <option value={14}>This date, +13 days (2 weeks)</option>
+            </select>
+            {form.date && form.flexDays > 1 && (
+              <p style={{ color: 'var(--gold)', fontSize: 12, marginTop: 6 }}>
+                We'll check every day from {new Date(form.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} through{' '}
+                {(() => {
+                  const end = new Date(form.date + 'T12:00:00');
+                  end.setDate(end.getDate() + form.flexDays - 1);
+                  return end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                })()}, and email you as soon as any day opens up.
+              </p>
+            )}
+          </div>
 
           {/* Platform + party size */}
           <div style={{ display: 'flex', gap: 10 }}>

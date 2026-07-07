@@ -12,13 +12,34 @@ if (!getApps().length) {
 
 const db = getFirestore();
 
-function checkWindowDays(watch, today, defaultDays) {
-  const targetDate = new Date(watch.date + 'T12:00:00');
+function addDays(dateStr, days) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+function checkWindowDaysRange(watch, today, defaultDays) {
+  const numDays = Math.max(1, parseInt(watch.flexDays) || 1);
   const windowDays = parseInt(watch.windowDays) || defaultDays;
-  const windowOpens = new Date(targetDate);
-  windowOpens.setDate(windowOpens.getDate() - windowDays);
   const todayDate = new Date(today + 'T12:00:00');
-  return todayDate >= windowOpens;
+
+  for (let i = 0; i < numDays; i++) {
+    const checkDate = i === 0 ? watch.date : addDays(watch.date, i);
+    const targetDate = new Date(checkDate + 'T12:00:00');
+    const windowOpens = new Date(targetDate);
+    windowOpens.setDate(windowOpens.getDate() - windowDays);
+
+    if (todayDate >= windowOpens) {
+      return { open: true, matchedDate: checkDate };
+    }
+  }
+
+  // None open yet — report how long until the earliest one opens
+  const firstTarget = new Date(watch.date + 'T12:00:00');
+  const firstWindowOpens = new Date(firstTarget);
+  firstWindowOpens.setDate(firstWindowOpens.getDate() - windowDays);
+  const daysUntilOpen = Math.ceil((firstWindowOpens - todayDate) / (1000 * 60 * 60 * 24));
+  return { open: false, daysUntilOpen, windowDays };
 }
 
 export default async function handler(req, res) {
@@ -42,28 +63,16 @@ export default async function handler(req, res) {
     result = await checkResy(watch);
 
   } else if (watch.platform === 'opentable') {
-    if (checkWindowDays(watch, today, 30)) {
-      result = { available: true, reason: 'Booking window is open', windowJustOpened: true };
-    } else {
-      const targetDate = new Date(watch.date + 'T12:00:00');
-      const windowDays = parseInt(watch.windowDays) || 30;
-      const windowOpens = new Date(targetDate);
-      windowOpens.setDate(windowOpens.getDate() - windowDays);
-      const daysUntilOpen = Math.ceil((windowOpens - new Date(today + 'T12:00:00')) / (1000 * 60 * 60 * 24));
-      result = { available: false, reason: `Window opens in ${daysUntilOpen} day${daysUntilOpen === 1 ? '' : 's'} (${windowDays}-day advance booking)` };
-    }
+    const w = checkWindowDaysRange(watch, today, 30);
+    result = w.open
+      ? { available: true, reason: 'Booking window is open', matchedDate: w.matchedDate }
+      : { available: false, reason: `Window opens in ${w.daysUntilOpen} day${w.daysUntilOpen === 1 ? '' : 's'} (${w.windowDays}-day advance booking)` };
 
   } else if (watch.platform === 'thefork') {
-    if (checkWindowDays(watch, today, 60)) {
-      result = { available: true, reason: 'Booking window is open', windowJustOpened: true };
-    } else {
-      const targetDate = new Date(watch.date + 'T12:00:00');
-      const windowDays = parseInt(watch.windowDays) || 60;
-      const windowOpens = new Date(targetDate);
-      windowOpens.setDate(windowOpens.getDate() - windowDays);
-      const daysUntilOpen = Math.ceil((windowOpens - new Date(today + 'T12:00:00')) / (1000 * 60 * 60 * 24));
-      result = { available: false, reason: `Window opens in ${daysUntilOpen} day${daysUntilOpen === 1 ? '' : 's'} (${windowDays}-day advance booking)` };
-    }
+    const w = checkWindowDaysRange(watch, today, 60);
+    result = w.open
+      ? { available: true, reason: 'Booking window is open', matchedDate: w.matchedDate }
+      : { available: false, reason: `Window opens in ${w.daysUntilOpen} day${w.daysUntilOpen === 1 ? '' : 's'} (${w.windowDays}-day advance booking)` };
 
   } else if (watch.platform === 'sevenrooms') {
     result = await checkSevenRooms(watch);

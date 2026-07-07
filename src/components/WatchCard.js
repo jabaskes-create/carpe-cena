@@ -28,9 +28,18 @@ export default function WatchCard({ watch, onDelete, isPast }) {
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState(null);
 
-  const dateStr = new Date(watch.date + 'T12:00:00').toLocaleDateString('en-US', {
-    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
-  });
+  const dateStr = watch.flexDays > 1
+    ? (() => {
+        const start = new Date(watch.date + 'T12:00:00');
+        const end = new Date(watch.date + 'T12:00:00');
+        end.setDate(end.getDate() + watch.flexDays - 1);
+        const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return `${startStr} – ${endStr}`;
+      })()
+    : new Date(watch.date + 'T12:00:00').toLocaleDateString('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
+      });
 
   const statusColor = watch.status === 'available' ? 'var(--green)'
     : watch.status === 'booked' ? 'var(--gold)'
@@ -39,6 +48,10 @@ export default function WatchCard({ watch, onDelete, isPast }) {
   const statusLabel = watch.status === 'available' ? '✓ Available!'
     : watch.status === 'booked' ? '✓ Booked'
     : '👁 Watching';
+
+  const matchedDateStr = watch.matchedDate
+    ? new Date(watch.matchedDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    : null;
 
   const timeRange = watch.timeFrom && watch.timeTo
     ? `${formatTime(watch.timeFrom)} – ${formatTime(watch.timeTo)}`
@@ -84,6 +97,11 @@ export default function WatchCard({ watch, onDelete, isPast }) {
           <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
             {watch.city} · {dateStr} · {watch.partySize} {watch.partySize === 1 ? 'guest' : 'guests'}
           </p>
+          {matchedDateStr && watch.status !== 'watching' && (
+            <p style={{ color: 'var(--green)', fontSize: 12, marginTop: 3, fontWeight: 600 }}>
+              ✓ Matched: {matchedDateStr}
+            </p>
+          )}
           {timeRange && (
             <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: 3 }}>
               🕐 {timeRange}

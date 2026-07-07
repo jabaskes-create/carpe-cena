@@ -11,13 +11,30 @@ if (!getApps().length) {
 const db = getFirestore();
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-function checkWindowDays(watch, today, defaultDays) {
-  const targetDate = new Date(watch.date + 'T12:00:00');
+function addDays(dateStr, days) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+// For window-based platforms (OpenTable, TheFork): checks each date in the
+// flexible range and returns the earliest one whose booking window has opened
+function checkWindowDaysRange(watch, today, defaultDays) {
+  const numDays = Math.max(1, parseInt(watch.flexDays) || 1);
   const windowDays = parseInt(watch.windowDays) || defaultDays;
-  const windowOpens = new Date(targetDate);
-  windowOpens.setDate(windowOpens.getDate() - windowDays);
   const todayDate = new Date(today + 'T12:00:00');
-  return todayDate >= windowOpens;
+
+  for (let i = 0; i < numDays; i++) {
+    const checkDate = i === 0 ? watch.date : addDays(watch.date, i);
+    const targetDate = new Date(checkDate + 'T12:00:00');
+    const windowOpens = new Date(targetDate);
+    windowOpens.setDate(windowOpens.getDate() - windowDays);
+
+    if (todayDate >= windowOpens) {
+      return { open: true, matchedDate: checkDate };
+    }
+  }
+  return { open: false };
 }
 
 export default async function handler(req, res) {
@@ -27,13 +44,6 @@ export default async function handler(req, res) {
 
   const today = new Date().toISOString().split('T')[0];
   console.log('Today:', today);
-
-  const snapAll = await db.collection('watches').get();
-  console.log('Total watches in DB:', snapAll.size);
-  snapAll.docs.forEach(d => {
-    const data = d.data();
-    console.log('Doc:', d.id, 'status:', data.status, 'date:', data.date, 'uid:', data.uid);
-  });
 
   const snap = await db.collection('watches')
     .where('status', '==', 'watching')
@@ -54,16 +64,16 @@ export default async function handler(req, res) {
       result = await checkResy(watch);
 
     } else if (watch.platform === 'opentable') {
-      // Date math — notify when window opens, link directly to OpenTable search
-      if (checkWindowDays(watch, today, 30)) {
-        const bookingUrl = watch.bookingUrl || `https://www.opentable.com/s?covers=${watch.partySize}&dateTime=${watch.date}T${watch.timeFrom || '19:00'}&term=${encodeURIComponent(watch.restaurant)}&location=${encodeURIComponent(watch.city)}`;
-        result = { available: true, bookingUrl, windowJustOpened: true };
+      const windowCheck = checkWindowDaysRange(watch, today, 30);
+      if (windowCheck.open) {
+        const bookingUrl = watch.bookingUrl || `https://www.opentable.com/s?covers=${watch.partySize}&dateTime=${windowCheck.matchedDate}T${watch.timeFrom || '19:00'}&term=${encodeURIComponent(watch.restaurant)}&location=${encodeURIComponent(watch.city)}`;
+        result = { available: true, bookingUrl, matchedDate: windowCheck.matchedDate, windowJustOpened: true };
       }
 
     } else if (watch.platform === 'thefork') {
-      // Date math — notify when window opens
-      if (checkWindowDays(watch, today, 60)) {
-        result = { available: true, bookingUrl: null, windowJustOpened: true };
+      const windowCheck = checkWindowDaysRange(watch, today, 60);
+      if (windowCheck.open) {
+        result = { available: true, bookingUrl: null, matchedDate: windowCheck.matchedDate, windowJustOpened: true };
       }
 
     } else if (watch.platform === 'sevenrooms') {
@@ -75,13 +85,15 @@ export default async function handler(req, res) {
       const email = watch.email;
 
       if (email) {
-        const dateStr = new Date(watch.date + 'T12:00:00').toLocaleDateString('en-US', {
+        const matchedDate = result.matchedDate || watch.date;
+        const dateStr = new Date(matchedDate + 'T12:00:00').toLocaleDateString('en-US', {
           weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
         });
 
         // Use manually entered booking URL if provided
         if (watch.bookingUrl) result.bookingUrl = watch.bookingUrl;
         const isWindowAlert = result.windowJustOpened;
+        const isFlexible = (parseInt(watch.flexDays) || 1) > 1;
 
         await resend.emails.send({
           from: 'Carpe Cena <noreply@gullivertravels.app>',
@@ -97,9 +109,10 @@ export default async function handler(req, res) {
                 ${isWindowAlert ? 'Reservations are now open!' : 'A table is available!'}
               </h2>
               <p style="font-size: 16px; margin-bottom: 8px;"><strong>${watch.restaurant}</strong></p>
-              <p style="color: #9a9080; margin-bottom: 24px;">${watch.city} · ${dateStr} · ${watch.partySize} guests</p>
+              <p style="color: #9a9080; margin-bottom: 8px;">${watch.city} · ${dateStr} · ${watch.partySize} guests</p>
+              ${isFlexible ? `<p style="color: #8a6f2e; font-size: 13px; margin-bottom: 16px;">Matched from your flexible ${watch.flexDays}-day window</p>` : ''}
               ${result.bookingUrl ? `
-                <a href="${result.bookingUrl}" style="display: inline-block; background: #c9a84c; color: #0f0e0c; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-family: sans-serif;">
+                <a href="${result.bookingUrl}" style="display: inline-block; background: #c9a84c; color: #0f0e0c; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-family: sans-serif; margin-top: 8px;">
                   Book Now →
                 </a>
               ` : `<p style="color: #c9a84c;">Head to ${watch.platform} to book now.</p>`}
@@ -108,7 +121,7 @@ export default async function handler(req, res) {
         });
       }
 
-      await db.collection('watches').doc(watch.id).update({ status: 'available' });
+      await db.collection('watches').doc(watch.id).update({ status: 'available', matchedDate: result.matchedDate || watch.date });
       results.push({ id: watch.id, restaurant: watch.restaurant, available: true });
     } else {
       results.push({ id: watch.id, restaurant: watch.restaurant, available: false });
