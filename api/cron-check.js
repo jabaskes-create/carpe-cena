@@ -2,6 +2,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { Resend } from 'resend';
 import { checkResy } from './check-resy.js';
+import { checkOpenTable } from './check-opentable.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
@@ -11,12 +12,10 @@ const db = getFirestore();
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export default async function handler(req, res) {
-  console.log('Headers received:', JSON.stringify(req.headers));
-  console.log('CRON_SECRET env:', process.env.CRON_SECRET);
-  
   if (req.headers['x-cron-secret'] !== process.env.CRON_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+
   const today = new Date().toISOString().split('T')[0];
 
   const snap = await db.collection('watches')
@@ -36,6 +35,8 @@ export default async function handler(req, res) {
 
     if (watch.platform === 'resy') {
       result = await checkResy(watch);
+    } else if (watch.platform === 'opentable') {
+      result = await checkOpenTable(watch);
     } else if (watch.platform === 'thefork') {
       const targetDate = new Date(watch.date + 'T12:00:00');
       const windowDays = parseInt(watch.theforkWindowDays) || 60;
