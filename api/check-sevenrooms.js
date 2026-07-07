@@ -1,72 +1,72 @@
 // Checks availability for a single SevenRooms watch entry
-// Uses SevenRooms public widget API — no auth required
+// Uses SevenRooms' public widget API — no auth required
 
 export async function checkSevenRooms(watch) {
   try {
-    const { date, partySize, timeFrom, timeTo, venueSlug } = watch;
+    const { restaurant, city, date, partySize, timeFrom, timeTo, venueSlug } = watch;
 
-    if (!venueSlug) {
-      return { available: false, reason: 'No venue slug — paste the SevenRooms URL when adding watch' };
-    }
+    // Use venueSlug if provided, otherwise derive from restaurant name
+    const slug = venueSlug || restaurant.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
-    // Use the public widget range API
-    const url = `https://www.sevenrooms.com/api-yoa/availability/widget/range?` +
-      `venue=${encodeURIComponent(venueSlug)}` +
-      `&time_slot=${timeFrom || '19:00'}` +
-      `&party_size=${partySize}` +
-      `&halo_size_interval=16` +
-      `&start_date=${date}` +
-      `&num_days=1` +
-      `&channel=SEVENROOMS_WIDGET`;
+    // Convert timeFrom to minutes from midnight for halo comparison
+    const [fromH, fromM] = (timeFrom || '17:00').split(':').map(Number);
+    const [toH, toM] = (timeTo || '22:00').split(':').map(Number);
+    const fromMins = fromH * 60 + fromM;
+    const toMins = toH * 60 + toM;
+
+    // Use midpoint of preferred window as the target time_slot
+    const midMins = Math.round((fromMins + toMins) / 2);
+    const midH = Math.floor(midMins / 60).toString().padStart(2, '0');
+    const midM = (midMins % 60).toString().padStart(2, '0');
+    const timeSlot = `${midH}:${midM}`;
+
+    // halo_size_interval=16 means check ±2 hours (16 x 15min intervals)
+    const url = `https://www.sevenrooms.com/api-yoa/availability/widget/range?venue=${slug}&time_slot=${timeSlot}&party_size=${partySize}&halo_size_interval=16&start_date=${date}&num_days=1&channel=SEVENROOMS_WIDGET`;
 
     const res = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': `https://www.sevenrooms.com/reservations/create/${venueSlug}`,
+        'Referer': `https://www.sevenrooms.com/reservations/create/${slug}`,
         'Accept': 'application/json',
       }
     });
 
     if (!res.ok) {
-      return { available: false, reason: `SevenRooms API returned ${res.status}` };
+      return { available: false, reason: `SevenRooms returned ${res.status}` };
     }
 
     const data = await res.json();
+    console.log('SevenRooms raw response:', JSON.stringify(data).slice(0, 2000));
 
-    // Response contains time_slots array for the requested date
-    const dateData = data?.data?.availability?.[date];
-    if (!dateData) {
-      return { available: false, reason: 'No data for requested date' };
+    // Response structure: data.data.availability is an object keyed by date
+    const dateAvail = data?.data?.availability?.[date];
+    if (!dateAvail) {
+      return { available: false, reason: 'No availability data for date' };
     }
 
-    // Filter slots within preferred time window
-    const fromMinutes = timeToMinutes(timeFrom || '17:00');
-    const toMinutes = timeToMinutes(timeTo || '22:00');
+    // Filter time slots within the preferred window
+    const slots = Object.entries(dateAvail)
+      .filter(([time, slotData]) => {
+        if (!slotData?.time_iso) return false;
+        const [h, m] = time.split(':').map(Number);
+        const slotMins = h * 60 + m;
+        return slotMins >= fromMins && slotMins <= toMins;
+      })
+      .filter(([, slotData]) => slotData?.status === 'available' || slotData?.inventory > 0);
 
-    const bookableSlots = Object.entries(dateData)
-      .filter(([time, slot]) => {
-        const slotMinutes = timeToMinutes(time);
-        return slotMinutes >= fromMinutes &&
-               slotMinutes <= toMinutes &&
-               slot?.times?.some(t => t.status === 'available');
-      });
-
-    if (bookableSlots.length > 0) {
-      const bookingUrl = `https://www.sevenrooms.com/reservations/create/${venueSlug}`;
-      const times = bookableSlots.map(([time]) => time);
-      return { available: true, slots: times, bookingUrl };
+    if (slots.length > 0) {
+      const bookingUrl = `https://www.sevenrooms.com/reservations/create/${slug}`;
+      return {
+        available: true,
+        slots: slots.map(([time]) => time),
+        bookingUrl,
+      };
     }
 
-    return { available: false, reason: 'No bookable slots in time window' };
+    return { available: false, reason: 'No slots in preferred time window' };
 
   } catch (err) {
-    console.error('SevenRooms check error:', err);
+    console.error('SevenRooms check error:', err.message);
     return { available: false, reason: err.message };
   }
-}
-
-function timeToMinutes(timeStr) {
-  if (!timeStr) return 0;
-  const [h, m] = timeStr.split(':').map(Number);
-  return h * 60 + (m || 0);
 }
