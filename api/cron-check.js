@@ -3,7 +3,6 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { Resend } from 'resend';
 import { checkResy } from './check-resy.js';
 import { checkSevenRooms } from './check-sevenrooms.js';
-import { checkSevenRooms } from './check-sevenrooms.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
@@ -67,10 +66,9 @@ export default async function handler(req, res) {
         result = { available: true, bookingUrl: null, windowJustOpened: true };
       }
 
-    }
     } else if (watch.platform === 'sevenrooms') {
       result = await checkSevenRooms(watch);
-
+    }
     // Tock — coming next session
 
     if (result.available) {
