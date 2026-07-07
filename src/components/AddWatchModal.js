@@ -131,7 +131,7 @@ export default function AddWatchModal({ onSave, onClose }) {
     partySize: 2,
     platform: 'resy',
     autoBook: false,
-    theforkWindowDays: '',
+    windowDays: '',
     timeFrom: '18:00',
     timeTo: '21:00',
   });
@@ -207,13 +207,21 @@ export default function AddWatchModal({ onSave, onClose }) {
             </div>
           </div>
 
-          {form.platform === 'thefork' && (
-            <input
-              type="number"
-              placeholder="Booking window (days in advance, e.g. 60)"
-              value={form.theforkWindowDays}
-              onChange={e => set('theforkWindowDays', e.target.value)}
-            />
+          {(form.platform === 'opentable' || form.platform === 'thefork') && (
+            <div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                Booking window (days in advance)
+              </p>
+              <input
+                type="number"
+                placeholder={form.platform === 'opentable' ? 'Default: 30 days' : 'Default: 60 days'}
+                value={form.windowDays}
+                onChange={e => set('windowDays', e.target.value)}
+              />
+              <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 6 }}>
+                We'll email you when this window opens. Leave blank to use the default.
+              </p>
+            </div>
           )}
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-secondary)', fontSize: 14, cursor: 'pointer' }}>

@@ -2,7 +2,6 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { Resend } from 'resend';
 import { checkResy } from './check-resy.js';
-import { checkOpenTable } from './check-opentable.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
@@ -10,6 +9,15 @@ if (!getApps().length) {
 
 const db = getFirestore();
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+function checkWindowDays(watch, today, defaultDays) {
+  const targetDate = new Date(watch.date + 'T12:00:00');
+  const windowDays = parseInt(watch.windowDays) || defaultDays;
+  const windowOpens = new Date(targetDate);
+  windowOpens.setDate(windowOpens.getDate() - windowDays);
+  const todayDate = new Date(today + 'T12:00:00');
+  return todayDate >= windowOpens;
+}
 
 export default async function handler(req, res) {
   if (req.headers['x-cron-secret'] !== process.env.CRON_SECRET) {
@@ -35,19 +43,22 @@ export default async function handler(req, res) {
 
     if (watch.platform === 'resy') {
       result = await checkResy(watch);
+
     } else if (watch.platform === 'opentable') {
-      result = await checkOpenTable(watch);
+      // Date math — notify when window opens, link directly to OpenTable search
+      if (checkWindowDays(watch, today, 30)) {
+        const bookingUrl = `https://www.opentable.com/s?covers=${watch.partySize}&dateTime=${watch.date}T${watch.timeFrom || '19:00'}&term=${encodeURIComponent(watch.restaurant)}`;
+        result = { available: true, bookingUrl, windowJustOpened: true };
+      }
+
     } else if (watch.platform === 'thefork') {
-      const targetDate = new Date(watch.date + 'T12:00:00');
-      const windowDays = parseInt(watch.theforkWindowDays) || 60;
-      const windowOpens = new Date(targetDate);
-      windowOpens.setDate(windowOpens.getDate() - windowDays);
-      const todayDate = new Date(today + 'T12:00:00');
-      if (todayDate >= windowOpens) {
+      // Date math — notify when window opens
+      if (checkWindowDays(watch, today, 60)) {
         result = { available: true, bookingUrl: null, windowJustOpened: true };
       }
+
     }
-    // OpenTable, SevenRooms, Tock — coming next session
+    // SevenRooms, Tock — coming next session
 
     if (result.available) {
       const userDoc = await db.collection('users').doc(watch.uid).get();
@@ -58,15 +69,21 @@ export default async function handler(req, res) {
           weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
         });
 
+        const isWindowAlert = result.windowJustOpened;
+
         await resend.emails.send({
           from: 'Carpe Cena <noreply@yourdomain.com>',
           to: email,
-          subject: `🍽️ Book now: ${watch.restaurant} on ${dateStr}`,
+          subject: isWindowAlert
+            ? `🍽️ Reservations now open: ${watch.restaurant} on ${dateStr}`
+            : `🍽️ Book now: ${watch.restaurant} on ${dateStr}`,
           html: `
             <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #0f0e0c; color: #f0ead8;">
               <h1 style="color: #c9a84c; font-size: 24px; margin-bottom: 8px;">Carpe Cena</h1>
               <p style="color: #9a9080; margin-bottom: 24px;">Seize the dinner</p>
-              <h2 style="font-size: 20px; margin-bottom: 16px;">A table is available!</h2>
+              <h2 style="font-size: 20px; margin-bottom: 16px;">
+                ${isWindowAlert ? 'Reservations are now open!' : 'A table is available!'}
+              </h2>
               <p style="font-size: 16px; margin-bottom: 8px;"><strong>${watch.restaurant}</strong></p>
               <p style="color: #9a9080; margin-bottom: 24px;">${watch.city} · ${dateStr} · ${watch.partySize} guests</p>
               ${result.bookingUrl ? `
