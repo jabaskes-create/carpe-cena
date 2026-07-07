@@ -55,7 +55,7 @@ export default async function handler(req, res) {
     } else if (watch.platform === 'opentable') {
       // Date math — notify when window opens, link directly to OpenTable search
       if (checkWindowDays(watch, today, 30)) {
-        const bookingUrl = `https://www.opentable.com/s?covers=${watch.partySize}&dateTime=${watch.date}T${watch.timeFrom || '19:00'}&term=${encodeURIComponent(watch.restaurant)}`;
+        const bookingUrl = `https://www.opentable.com/s?covers=${watch.partySize}&dateTime=${watch.date}T${watch.timeFrom || '19:00'}&term=${encodeURIComponent(watch.restaurant)}&location=${encodeURIComponent(watch.city)}`;
         result = { available: true, bookingUrl, windowJustOpened: true };
       }
 
