@@ -8,8 +8,27 @@ function addDays(dateStr, days) {
   return d.toISOString().split('T')[0];
 }
 
-function formatTime(t) {
-  const [h, m] = t.split(':').map(Number);
+// SevenRooms sometimes returns "17:30" (24hr) and sometimes "5:30 PM" (12hr) —
+// this handles both so slot filtering and display never silently break.
+function parseTimeToMinutes(timeStr) {
+  if (!timeStr) return null;
+  const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/);
+  if (!match) return null;
+  let hour = parseInt(match[1], 10);
+  const minute = parseInt(match[2], 10);
+  const meridiem = match[3]?.toUpperCase();
+
+  if (meridiem === 'PM' && hour !== 12) hour += 12;
+  if (meridiem === 'AM' && hour === 12) hour = 0;
+
+  return hour * 60 + minute;
+}
+
+function formatTime(timeStr) {
+  const mins = parseTimeToMinutes(timeStr);
+  if (mins === null) return timeStr; // fallback: show raw string rather than break
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
   const ampm = h >= 12 ? 'pm' : 'am';
   const hour = h > 12 ? h - 12 : h === 0 ? 12 : h;
   return `${hour}:${m.toString().padStart(2, '0')}${ampm}`;
@@ -59,9 +78,8 @@ async function checkOneDate(watch, date, slug, fromMins, toMins) {
     for (const slot of times) {
       allTimes.push({ time: slot.time, type: slot.type });
       if (slot.type !== 'book') continue;
-      const [h, m] = slot.time.split(':').map(Number);
-      const slotMins = h * 60 + m;
-      if (slotMins >= fromMins && slotMins <= toMins) {
+      const slotMins = parseTimeToMinutes(slot.time);
+      if (slotMins !== null && slotMins >= fromMins && slotMins <= toMins) {
         allSlots.push(slot.time);
       }
     }
