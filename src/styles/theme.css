@@ -1,0 +1,52 @@
+:root {
+  --bg-primary: #0f0e0c;
+  --bg-secondary: #1a1814;
+  --bg-card: #221f1a;
+  --border: #2e2a24;
+  --gold: #c9a84c;
+  --gold-light: #e8c97a;
+  --gold-dim: #8a6f2e;
+  --text-primary: #f0ead8;
+  --text-secondary: #9a9080;
+  --text-dim: #5a5448;
+  --red: #c0392b;
+  --green: #2ecc71;
+  --radius: 10px;
+  --font: 'Georgia', serif;
+  --font-ui: 'Inter', -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  min-height: 100vh;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  font-family: var(--font-ui);
+}
+
+input, select {
+  font-family: var(--font-ui);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  width: 100%;
+  font-size: 14px;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--gold-dim);
+}
+
+select option {
+  background: var(--bg-secondary);
+}
