@@ -37,6 +37,10 @@ function extractSevenRoomsSlug(url) {
   return '';
 }
 
+function isGoogleMapsReserveUrl(url) {
+  return /google\.com\/maps\/reserve/i.test(url || '');
+}
+
 // Mini calendar component
 function CalendarPicker({ value, onChange }) {
   const today = new Date();
@@ -286,8 +290,10 @@ export default function AddWatchModal({ onSave, onClose }) {
                 value={form.bookingUrl}
                 onChange={e => setSevenRoomsUrl(e.target.value)}
               />
-              <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 6 }}>
-                {form.venueSlug
+              <p style={{ color: isGoogleMapsReserveUrl(form.bookingUrl) ? 'var(--red)' : 'var(--text-dim)', fontSize: 11, marginTop: 6 }}>
+                {isGoogleMapsReserveUrl(form.bookingUrl)
+                  ? "⚠️ This is a Google Maps link — we can't read the venue from it. Find the restaurant's direct SevenRooms link instead (often on their own website's Reservations page)."
+                  : form.venueSlug
                   ? `✓ Found venue: ${form.venueSlug}`
                   : "Paste any sevenrooms.com link for this restaurant — we'll figure out the rest."}
               </p>

@@ -27,7 +27,12 @@ async function checkOneDate(watch, date, slug, fromMins, toMins) {
   });
 
   if (!res.ok) {
-    return { ok: false, httpStatus: res.status };
+    const friendlyReason = res.status === 400
+      ? `Couldn't find "${slug}" as a SevenRooms venue — double check you pasted their direct SevenRooms booking link (not a Google Maps link)`
+      : res.status === 404
+      ? `Venue "${slug}" not found on SevenRooms`
+      : `SevenRooms had a problem responding (error ${res.status}) — try again shortly`;
+    return { ok: false, httpStatus: res.status, friendlyReason };
   }
 
   const data = await res.json();
@@ -73,7 +78,7 @@ export async function checkSevenRooms(watch) {
       if (!result.ok) {
         // If the very first date fails outright, surface the error;
         // otherwise just skip this date and keep checking the range
-        if (i === 0) return { available: false, reason: `SevenRooms returned ${result.httpStatus}` };
+        if (i === 0) return { available: false, reason: result.friendlyReason || `SevenRooms returned ${result.httpStatus}` };
         continue;
       }
 
