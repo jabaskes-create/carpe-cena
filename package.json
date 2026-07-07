@@ -2,7 +2,6 @@
   "name": "carpe-cena",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "dependencies": {
     "firebase": "^10.0.0",
     "firebase-admin": "^12.0.0",
