@@ -25,6 +25,14 @@ export default async function handler(req, res) {
   }
 
   const today = new Date().toISOString().split('T')[0];
+  console.log('Today:', today);
+
+  const snapAll = await db.collection('watches').get();
+  console.log('Total watches in DB:', snapAll.size);
+  snapAll.docs.forEach(d => {
+    const data = d.data();
+    console.log('Doc:', d.id, 'status:', data.status, 'date:', data.date, 'uid:', data.uid);
+  });
 
   const snap = await db.collection('watches')
     .where('status', '==', 'watching')
@@ -72,7 +80,7 @@ export default async function handler(req, res) {
         const isWindowAlert = result.windowJustOpened;
 
         await resend.emails.send({
-          from: 'Carpe Cena <noreply@gullivertravels.app>',
+          from: 'Carpe Cena <noreply@yourdomain.com>',
           to: email,
           subject: isWindowAlert
             ? `🍽️ Reservations now open: ${watch.restaurant} on ${dateStr}`
