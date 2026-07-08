@@ -339,7 +339,7 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
                 Open {form.platform === 'opentable' ? 'OpenTable' : 'TheFork'} right now and look at the furthest date it'll let you book. This makes checking dramatically more efficient — <strong style={{ color: 'var(--gold)' }}>with it, we check as often as daily right when your window is likely to open.</strong> Without it, we fall back to a much sparser schedule (weekly, then twice-weekly) since we're checking blind.
               </p>
               <details style={{ marginTop: 10 }}>
-                <summary style={{ color: 'var(--text-dim)', fontSize: 11, cursor: 'pointer' }}>Advanced: override days-in-advance manually</summary>
+                <summary style={{ color: 'var(--text-dim)', fontSize: 11, cursor: 'pointer' }}>Advanced: override days-in-advance manually (only used if you skip the field above)</summary>
                 <input
                   type="number"
                   placeholder={form.platform === 'opentable' ? 'Default: 30 days' : 'Default: 60 days'}
