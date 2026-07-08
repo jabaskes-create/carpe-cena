@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 
 const PLATFORM_COLORS = {
-  resy: '#e74c3c',
-  opentable: '#da3743',
-  sevenrooms: '#1a1a2e',
-  tock: '#2c3e50',
-  thefork: '#00b28a',
+  resy: '#ff6b6b',
+  opentable: '#ffa94d',
+  sevenrooms: '#c084fc',
+  tock: '#4dabf7',
+  thefork: '#20c997',
 };
 
 const PLATFORM_LABELS = {

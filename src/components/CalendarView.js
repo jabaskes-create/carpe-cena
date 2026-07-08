@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 
 const PLATFORM_COLORS = {
-  resy: '#e74c3c',
-  opentable: '#da3743',
-  sevenrooms: '#1a1a2e',
-  tock: '#2c3e50',
-  thefork: '#00b28a',
+  resy: '#ff6b6b',
+  opentable: '#ffa94d',
+  sevenrooms: '#c084fc',
+  tock: '#4dabf7',
+  thefork: '#20c997',
 };
 
 function toISODate(y, m, d) {
@@ -157,49 +157,33 @@ export default function CalendarView({ watches, onStopOthers, onBack }) {
                   <div key={w.id} style={{
                     background: 'var(--bg-card)', border: '1px solid var(--border)',
                     borderRadius: 8, padding: '10px 14px',
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   }}>
-                    <div>
-                      <span style={{
-                        background: PLATFORM_COLORS[w.platform] || '#333', color: '#fff',
-                        fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-                        textTransform: 'uppercase', marginRight: 8,
-                      }}>
-                        {w.platform}
-                      </span>
-                      <span style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 600 }}>{w.restaurant}</span>
-                      {(w.status === 'available' || w.status === 'booked') && (
-                        <span style={{ color: 'var(--green)', fontSize: 11, marginLeft: 8 }}>✓ {w.status}</span>
-                      )}
-                    </div>
-                    {selectedWatches.length > 1 && (
-                      <button
-                        onClick={() => onStopOthers(selectedDate, w.id, selectedWatches)}
-                        style={{
-                          background: 'transparent', border: '1px solid var(--gold-dim)',
-                          color: 'var(--gold)', fontSize: 11, fontWeight: 600,
-                          padding: '5px 10px', borderRadius: 6,
-                        }}
-                      >
-                        I booked this — stop others
-                      </button>
+                    <span style={{
+                      background: PLATFORM_COLORS[w.platform] || '#333', color: '#fff',
+                      fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
+                      textTransform: 'uppercase', marginRight: 8,
+                    }}>
+                      {w.platform}
+                    </span>
+                    <span style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 600 }}>{w.restaurant}</span>
+                    {(w.status === 'available' || w.status === 'booked') && (
+                      <span style={{ color: 'var(--green)', fontSize: 11, marginLeft: 8 }}>✓ {w.status}</span>
                     )}
                   </div>
                 ))}
               </div>
 
-              {selectedWatches.length > 1 && (
-                <button
-                  onClick={() => onStopOthers(selectedDate, null, selectedWatches)}
-                  style={{
-                    background: 'transparent', border: '1px solid var(--text-dim)',
-                    color: 'var(--text-secondary)', fontSize: 12,
-                    padding: '8px 14px', borderRadius: 6,
-                  }}
-                >
-                  I booked somewhere else entirely — stop all {selectedWatches.length} of these
-                </button>
-              )}
+              <button
+                onClick={() => onStopOthers(selectedDate, null, selectedWatches)}
+                style={{
+                  width: '100%',
+                  background: 'transparent', border: '1px solid var(--gold-dim)',
+                  color: 'var(--gold)', fontSize: 13, fontWeight: 600,
+                  padding: '10px 14px', borderRadius: 8,
+                }}
+              >
+                No longer need a reservation for this date — stop {selectedWatches.length === 1 ? 'this watch' : `all ${selectedWatches.length}`}
+              </button>
             </>
           )}
         </div>
