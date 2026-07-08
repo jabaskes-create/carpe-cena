@@ -7,11 +7,13 @@ import {
 } from 'firebase/firestore';
 import WatchCard from '../components/WatchCard';
 import AddWatchModal from '../components/AddWatchModal';
+import CalendarView from '../components/CalendarView';
 
 export default function HomePage() {
   const [watches, setWatches] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [editingWatch, setEditingWatch] = useState(null);
+  const [view, setView] = useState('list'); // 'list' | 'calendar'
   const user = auth.currentUser;
 
   useEffect(() => {
@@ -38,8 +40,6 @@ export default function HomePage() {
     const { id, ...fields } = data;
     // Editing implies the person wants fresh eyes on this watch —
     // reset it back to "watching" so it re-enters the check cycle
-    // (the cron itself runs daily; whether THIS watch gets a real
-    // check on any given day depends on its adaptive schedule)
     // rather than sitting stale in "Completed" with an outdated match.
     await updateDoc(doc(db, 'watches', id), {
       ...fields,
@@ -68,6 +68,24 @@ export default function HomePage() {
     setEditingWatch(null);
   };
 
+  // Batch-clear: given a date and the set of watches touching it, delete
+  // all of them except the one the person says they actually booked
+  // (keepWatchId can be null if they booked somewhere not in this list —
+  // e.g. a phone reservation — in which case all of them get cleared).
+  const stopOthersForDate = async (dateISO, keepWatchId, watchesOnThatDate) => {
+    const toDelete = watchesOnThatDate.filter(w => w.id !== keepWatchId);
+    if (toDelete.length === 0) return;
+
+    const dateLabel = new Date(dateISO + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+    const names = toDelete.map(w => w.restaurant).join(', ');
+    const confirmed = window.confirm(
+      `Stop watching ${toDelete.length} other restaurant${toDelete.length === 1 ? '' : 's'} for ${dateLabel}?\n\n${names}\n\nThis can't be undone.`
+    );
+    if (!confirmed) return;
+
+    await Promise.all(toDelete.map(w => deleteDoc(doc(db, 'watches', w.id))));
+  };
+
   // Only show watches whose target date hasn't passed yet.
   // Once the date passes, the watch quietly drops off the list —
   // no need to keep cluttering the screen with old entries.
@@ -94,13 +112,42 @@ export default function HomePage() {
         </button>
       </div>
 
-      <button onClick={openAdd} style={{
-        width: '100%', background: 'var(--gold)', color: '#0f0e0c',
-        padding: '14px', borderRadius: 10, fontWeight: 600, fontSize: 15,
-        marginBottom: 28, letterSpacing: 0.3
-      }}>
-        + Watch a Restaurant
-      </button>
+      {view === 'list' && (
+        <button onClick={openAdd} style={{
+          width: '100%', background: 'var(--gold)', color: '#0f0e0c',
+          padding: '14px', borderRadius: 10, fontWeight: 600, fontSize: 15,
+          marginBottom: 16, letterSpacing: 0.3
+        }}>
+          + Watch a Restaurant
+        </button>
+      )}
+
+      {upcoming.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+          <button
+            onClick={() => setView('list')}
+            style={{
+              flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              background: view === 'list' ? 'var(--bg-card)' : 'transparent',
+              border: `1px solid ${view === 'list' ? 'var(--gold-dim)' : 'var(--border)'}`,
+              color: view === 'list' ? 'var(--gold)' : 'var(--text-dim)',
+            }}
+          >
+            ☰ List
+          </button>
+          <button
+            onClick={() => setView('calendar')}
+            style={{
+              flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              background: view === 'calendar' ? 'var(--bg-card)' : 'transparent',
+              border: `1px solid ${view === 'calendar' ? 'var(--gold-dim)' : 'var(--border)'}`,
+              color: view === 'calendar' ? 'var(--gold)' : 'var(--text-dim)',
+            }}
+          >
+            📅 Calendar
+          </button>
+        </div>
+      )}
 
       {upcoming.length === 0 ? (
         <div style={{
@@ -112,6 +159,12 @@ export default function HomePage() {
           <p>No active watches.</p>
           <p style={{ fontSize: 13, marginTop: 6 }}>Add a restaurant to start monitoring availability.</p>
         </div>
+      ) : view === 'calendar' ? (
+        <CalendarView
+          watches={upcoming}
+          onStopOthers={stopOthersForDate}
+          onBack={() => setView('list')}
+        />
       ) : (
         <>
           {/* Watching section */}
