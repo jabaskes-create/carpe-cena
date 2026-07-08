@@ -113,7 +113,7 @@ async function checkOneDate(token, sessionId, restaurantId, date, partySize) {
   const result = await callTool(token, sessionId, 'check_availability', {
     restaurant: String(restaurantId),
     date,
-    partySize,
+    party_size: partySize,
   });
 
   console.log('OpenTable MCP check_availability raw result:', JSON.stringify(result).slice(0, 1500));
