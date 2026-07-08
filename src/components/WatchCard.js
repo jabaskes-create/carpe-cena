@@ -50,8 +50,12 @@ export default function WatchCard({ watch, onDelete, onEdit, isPast }) {
         weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
       });
 
-  // Show which specific weekdays are targeted, if the person narrowed it down
-  const weekdayStr = (watch.flexDays > 1 && Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7)
+  // Show day preference — ranked order if using the new model, otherwise
+  // the old flat "only these days" list
+  const dayPriorityStr = (watch.flexDays > 1 && Array.isArray(watch.dayPriority) && watch.dayPriority.length > 0)
+    ? watch.dayPriority.map(d => WEEKDAY_LABELS[d]).join(' → ')
+    : null;
+  const weekdayStr = (!dayPriorityStr && watch.flexDays > 1 && Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7)
     ? watch.allowedWeekdays.slice().sort().map(d => WEEKDAY_LABELS[d]).join(', ')
     : null;
 
@@ -67,9 +71,10 @@ export default function WatchCard({ watch, onDelete, onEdit, isPast }) {
     ? new Date(watch.matchedDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
     : null;
 
-  const timeRange = watch.timeFrom && watch.timeTo
-    ? `${formatTime(watch.timeFrom)} – ${formatTime(watch.timeTo)}`
-    : null;
+  // Ideal time + tolerance (new model) takes priority over the old range display
+  const timeRange = watch.idealTime
+    ? `${formatTime(watch.idealTime)} ± ${watch.toleranceMinutes >= 60 ? `${watch.toleranceMinutes / 60}hr` : `${watch.toleranceMinutes}min`}`
+    : (watch.timeFrom && watch.timeTo ? `${formatTime(watch.timeFrom)} – ${formatTime(watch.timeTo)}` : null);
 
   const handleCheckNow = async () => {
     setChecking(true);
@@ -118,6 +123,11 @@ export default function WatchCard({ watch, onDelete, onEdit, isPast }) {
           <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
             {watch.city} · {dateStr} · {watch.partySize} {watch.partySize === 1 ? 'guest' : 'guests'}
           </p>
+          {dayPriorityStr && (
+            <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: 3 }}>
+              📅 Preference: {dayPriorityStr}
+            </p>
+          )}
           {weekdayStr && (
             <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: 3 }}>
               📅 Only: {weekdayStr}
@@ -125,7 +135,7 @@ export default function WatchCard({ watch, onDelete, onEdit, isPast }) {
           )}
           {matchedDateStr && watch.status !== 'watching' && (
             <p style={{ color: 'var(--green)', fontSize: 12, marginTop: 3, fontWeight: 600 }}>
-              ✓ Matched: {matchedDateStr}
+              ✓ Matched: {matchedDateStr}{watch.matchedTime ? ` at ${formatTime(watch.matchedTime)}` : ''}
             </p>
           )}
           {timeRange && (

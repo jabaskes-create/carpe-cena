@@ -5,8 +5,12 @@
 // ignores its "time" parameter and always returns the same fixed batch of
 // slots starting from opening time — useless for evening reservations.
 // search_restaurants, however, correctly returns slots filtered near the
-// requested time. So we use search_restaurants exclusively, even just to
-// check one known restaurant, and skip check_availability entirely.
+// requested time. So we use search_restaurants exclusively.
+//
+// Supports two matching modes:
+//  - Day-priority ranked: check days in preferred order, pick the slot
+//    closest to idealTime within tolerance, stop at first day with a match.
+//  - Legacy: sequential flexDays range, any slot within timeFrom/timeTo counts.
 
 const MCP_BASE = 'https://clearpath--opentable-booker.apify.actor/mcp';
 
@@ -16,19 +20,21 @@ function addDays(dateStr, days) {
   return d.toISOString().split('T')[0];
 }
 
-function midpointTime(timeFrom, timeTo) {
-  const [fromH, fromM] = (timeFrom || '17:00').split(':').map(Number);
-  const [toH, toM] = (timeTo || '22:00').split(':').map(Number);
-  const midMins = Math.round(((fromH * 60 + fromM) + (toH * 60 + toM)) / 2);
-  const midH = Math.floor(midMins / 60).toString().padStart(2, '0');
-  const midM = (midMins % 60).toString().padStart(2, '0');
-  return `${midH}:${midM}`;
+function dateInRange(startDate, days, weekday) {
+  for (let i = 0; i < days; i++) {
+    const d = i === 0 ? startDate : addDays(startDate, i);
+    if (new Date(d + 'T12:00:00').getDay() === weekday) return d;
+  }
+  return null;
 }
 
-function windowToMinutes(timeFrom, timeTo) {
-  const [fromH, fromM] = (timeFrom || '17:00').split(':').map(Number);
-  const [toH, toM] = (timeTo || '22:00').split(':').map(Number);
-  return { fromMins: fromH * 60 + fromM, toMins: toH * 60 + toM };
+function timeToMinutes(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function minutesToHHMM(mins) {
+  return `${Math.floor(mins / 60).toString().padStart(2, '0')}:${(mins % 60).toString().padStart(2, '0')}`;
 }
 
 // Minimal MCP client: handles the initialize handshake once per call chain,
@@ -103,14 +109,12 @@ async function callTool(token, sessionId, toolName, args) {
 // Searches for the restaurant on a specific date, biased toward a preferred
 // time — this single call gives us both the restaurant ID and its
 // time-filtered slots for that date.
-async function searchOneDate(token, sessionId, restaurant, city, date, timeFrom, timeTo, partySize) {
-  const time = midpointTime(timeFrom, timeTo);
-
+async function searchOneDate(token, sessionId, restaurant, city, date, preferredTime, partySize) {
   const result = await callTool(token, sessionId, 'search_restaurants', {
     query: restaurant,
     city,
     date,
-    time,
+    time: preferredTime,
     party_size: partySize,
   });
 
@@ -130,48 +134,77 @@ export async function checkOpenTableReal(watch) {
   }
 
   try {
-    const { restaurant, city, date, partySize, timeFrom, timeTo, flexDays } = watch;
+    const { restaurant, city, date, partySize, timeFrom, timeTo, flexDays, dayPriority, idealTime, toleranceMinutes, allowedWeekdays } = watch;
     const sessionId = await initSession(token);
-    const { fromMins, toMins } = windowToMinutes(timeFrom, timeTo);
+
+    let fromMins, toMins, targetIdealMins;
+    if (idealTime) {
+      targetIdealMins = timeToMinutes(idealTime);
+      fromMins = targetIdealMins - (toleranceMinutes || 60);
+      toMins = targetIdealMins + (toleranceMinutes || 60);
+    } else {
+      fromMins = timeToMinutes(timeFrom || '17:00');
+      toMins = timeToMinutes(timeTo || '22:00');
+      targetIdealMins = Math.round((fromMins + toMins) / 2);
+    }
+    const preferredTime = minutesToHHMM(targetIdealMins);
+
     const numDays = Math.max(1, parseInt(flexDays) || 1);
+
+    let datesToCheck = [];
+    if (Array.isArray(dayPriority) && dayPriority.length > 0) {
+      for (const weekday of dayPriority) {
+        const d = dateInRange(date, numDays, weekday);
+        if (d) datesToCheck.push(d);
+      }
+    } else {
+      for (let i = 0; i < numDays; i++) {
+        const checkDate = i === 0 ? date : addDays(date, i);
+        if (Array.isArray(allowedWeekdays) && allowedWeekdays.length < 7) {
+          const dow = new Date(checkDate + 'T12:00:00').getDay();
+          if (!allowedWeekdays.includes(dow)) continue;
+        }
+        datesToCheck.push(checkDate);
+      }
+    }
 
     let lastRestaurantId = null;
 
-    for (let i = 0; i < numDays; i++) {
-      const checkDate = i === 0 ? date : addDays(date, i);
-
-      if (Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7) {
-        const dow = new Date(checkDate + 'T12:00:00').getDay();
-        if (!watch.allowedWeekdays.includes(dow)) continue;
-      }
-
-      const { id, slots } = await searchOneDate(token, sessionId, restaurant, city, checkDate, timeFrom, timeTo, partySize);
+    for (let idx = 0; idx < datesToCheck.length; idx++) {
+      const checkDate = datesToCheck[idx];
+      const { id, slots } = await searchOneDate(token, sessionId, restaurant, city, checkDate, preferredTime, partySize);
 
       if (!id) {
-        if (i === 0) return { available: false, reason: `Couldn't find "${restaurant}" on OpenTable via search` };
+        if (idx === 0) return { available: false, reason: `Couldn't find "${restaurant}" on OpenTable via search` };
         continue;
       }
       lastRestaurantId = id;
 
-      const inWindow = slots.filter(s => {
-        const timeStr = s.time || s.startTime || '';
-        const timePart = timeStr.includes('T') ? timeStr.split('T')[1] : timeStr;
-        const m = timePart.match(/^(\d{1,2}):(\d{2})/);
-        if (!m) return false;
-        const mins = parseInt(m[1]) * 60 + parseInt(m[2]);
-        return mins >= fromMins && mins <= toMins;
-      });
+      const inWindow = slots
+        .map(s => {
+          const timeStr = s.time || s.startTime || '';
+          const timePart = timeStr.includes('T') ? timeStr.split('T')[1] : timeStr;
+          const m = timePart.match(/^(\d{1,2}):(\d{2})/);
+          if (!m) return null;
+          const mins = parseInt(m[1]) * 60 + parseInt(m[2]);
+          return { time: `${m[1].padStart(2,'0')}:${m[2]}`, mins };
+        })
+        .filter(s => s && s.mins >= fromMins && s.mins <= toMins);
 
       if (inWindow.length > 0) {
         const dateLabel = new Date(checkDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-        const times = inWindow.map(s => (s.time || '').split('T')[1]).join(', ');
+        const sorted = inWindow.sort((a, b) => Math.abs(a.mins - targetIdealMins) - Math.abs(b.mins - targetIdealMins));
+        const best = sorted[0];
+        const allTimesStr = sorted.map(s => s.time).join(', ');
+
         return {
           available: true,
-          reason: numDays > 1
-            ? `Found ${inWindow.length} slot(s) on ${dateLabel} (${times}) via live OpenTable check`
-            : `Found ${inWindow.length} slot(s) (${times}) via live OpenTable check`,
+          reason: datesToCheck.length > 1
+            ? `Best match: ${best.time} on ${dateLabel} (${sorted.length} total: ${allTimesStr}) via live OpenTable check`
+            : `Best match: ${best.time} (${sorted.length} total: ${allTimesStr}) via live OpenTable check`,
           matchedDate: checkDate,
-          bookingUrl: `https://www.opentable.com/booking/restref/availability?rid=${id}&partySize=${partySize}&dateTime=${checkDate}T${timeFrom || '19:00'}`,
+          matchedTime: best.time,
+          bookingUrl: `https://www.opentable.com/booking/restref/availability?rid=${id}&partySize=${partySize}&dateTime=${checkDate}T${best.time}`,
           confirmedRestaurantId: id,
         };
       }
@@ -179,9 +212,9 @@ export async function checkOpenTableReal(watch) {
 
     return {
       available: false,
-      reason: numDays > 1
-        ? `Checked ${numDays} days live on OpenTable — no slots in your time window on any of them`
-        : 'Checked live on OpenTable — no slots in your time window',
+      reason: datesToCheck.length > 1
+        ? `Checked ${datesToCheck.length} day(s) live on OpenTable — no slots in your preferred time on any of them`
+        : 'Checked live on OpenTable — no slots in your preferred time',
       confirmedRestaurantId: lastRestaurantId,
     };
 

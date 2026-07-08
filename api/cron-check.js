@@ -24,25 +24,55 @@ function daysBetween(dateStrA, dateStrB) {
   return Math.round((b - a) / (1000 * 60 * 60 * 24));
 }
 
+function dateInRange(startDate, days, weekday) {
+  for (let i = 0; i < days; i++) {
+    const d = i === 0 ? startDate : addDays(startDate, i);
+    if (new Date(d + 'T12:00:00').getDay() === weekday) return d;
+  }
+  return null;
+}
+
 // For window-based platforms (TheFork, and OpenTable's free fallback):
-// checks each date in the flexible range and returns the earliest one
-// whose booking window has opened, per a simple days-in-advance guess.
+// checks candidate dates in priority order (if the person ranked specific
+// weekdays) or sequential order, and returns the earliest/highest-ranked
+// one whose booking window has opened.
+//
+// Lead time (days-in-advance the window opens) is sourced in priority order:
+// 1. Furthest-bookable-date observation, if provided — the most accurate
+// 2. Manual windowDays override, if provided
+// 3. Platform default
 function checkWindowDaysRange(watch, today, defaultDays) {
   const numDays = Math.max(1, parseInt(watch.flexDays) || 1);
-  const windowDays = parseInt(watch.windowDays) || defaultDays;
   const todayDate = new Date(today + 'T12:00:00');
 
-  for (let i = 0; i < numDays; i++) {
-    const checkDate = i === 0 ? watch.date : addDays(watch.date, i);
+  let leadDays;
+  if (watch.furthestBookableDate && watch.furthestBookableObservedAt) {
+    leadDays = daysBetween(watch.furthestBookableObservedAt, watch.furthestBookableDate);
+  } else {
+    leadDays = parseInt(watch.windowDays) || defaultDays;
+  }
 
-    if (Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7) {
-      const dow = new Date(checkDate + 'T12:00:00').getDay();
-      if (!watch.allowedWeekdays.includes(dow)) continue;
+  let datesToCheck = [];
+  if (Array.isArray(watch.dayPriority) && watch.dayPriority.length > 0) {
+    for (const weekday of watch.dayPriority) {
+      const d = dateInRange(watch.date, numDays, weekday);
+      if (d) datesToCheck.push(d);
     }
+  } else {
+    for (let i = 0; i < numDays; i++) {
+      const checkDate = i === 0 ? watch.date : addDays(watch.date, i);
+      if (Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7) {
+        const dow = new Date(checkDate + 'T12:00:00').getDay();
+        if (!watch.allowedWeekdays.includes(dow)) continue;
+      }
+      datesToCheck.push(checkDate);
+    }
+  }
 
+  for (const checkDate of datesToCheck) {
     const targetDate = new Date(checkDate + 'T12:00:00');
     const windowOpens = new Date(targetDate);
-    windowOpens.setDate(windowOpens.getDate() - windowDays);
+    windowOpens.setDate(windowOpens.getDate() - leadDays);
 
     if (todayDate >= windowOpens) {
       return { open: true, matchedDate: checkDate };

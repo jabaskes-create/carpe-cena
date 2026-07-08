@@ -45,6 +45,7 @@ export default function HomePage() {
       ...fields,
       status: 'watching',
       matchedDate: null,
+      matchedTime: null,
     });
   };
 

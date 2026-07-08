@@ -1,11 +1,23 @@
 // Checks availability for a single SevenRooms watch entry
 // Uses SevenRooms' public widget API — no auth required
-// Supports flexible date ranges: loops through each day and stops at the first match
+//
+// Supports two matching modes:
+//  - Day-priority ranked: check days in preferred order, pick the slot
+//    closest to idealTime within tolerance, stop at first day with a match.
+//  - Legacy: sequential flexDays range, any slot within timeFrom/timeTo counts.
 
 function addDays(dateStr, days) {
   const d = new Date(dateStr + 'T12:00:00');
   d.setDate(d.getDate() + days);
   return d.toISOString().split('T')[0];
+}
+
+function dateInRange(startDate, days, weekday) {
+  for (let i = 0; i < days; i++) {
+    const d = i === 0 ? startDate : addDays(startDate, i);
+    if (new Date(d + 'T12:00:00').getDay() === weekday) return d;
+  }
+  return null;
 }
 
 // SevenRooms sometimes returns "17:30" (24hr) and sometimes "5:30 PM" (12hr) —
@@ -26,7 +38,7 @@ function parseTimeToMinutes(timeStr) {
 
 function formatTime(timeStr) {
   const mins = parseTimeToMinutes(timeStr);
-  if (mins === null) return timeStr; // fallback: show raw string rather than break
+  if (mins === null) return timeStr;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   const ampm = h >= 12 ? 'pm' : 'am';
@@ -42,9 +54,6 @@ async function checkOneDate(watch, date, slug, fromMins, toMins) {
   const midM = (midMins % 60).toString().padStart(2, '0');
   const timeSlot = `${midH}:${midM}`;
 
-  // halo_size_interval covers ± this many 15-min steps around time_slot.
-  // Widened to 32 (±8 hours) so we reliably cover the full requested window
-  // regardless of how far it sits from the midpoint.
   const url = `https://www.sevenrooms.com/api-yoa/availability/widget/range?venue=${slug}&time_slot=${timeSlot}&party_size=${partySize}&halo_size_interval=32&start_date=${date}&num_days=1&channel=SEVENROOMS_WIDGET`;
 
   const res = await fetch(url, {
@@ -71,7 +80,7 @@ async function checkOneDate(watch, date, slug, fromMins, toMins) {
   }
 
   const allSlots = [];
-  const allTimes = []; // unfiltered, for diagnostics
+  const allTimes = [];
   for (const shift of shifts) {
     if (shift.is_closed) continue;
     const times = shift.times || [];
@@ -80,7 +89,7 @@ async function checkOneDate(watch, date, slug, fromMins, toMins) {
       if (slot.type !== 'book') continue;
       const slotMins = parseTimeToMinutes(slot.time);
       if (slotMins !== null && slotMins >= fromMins && slotMins <= toMins) {
-        allSlots.push(slot.time);
+        allSlots.push({ time: slot.time, mins: slotMins });
       }
     }
   }
@@ -90,32 +99,51 @@ async function checkOneDate(watch, date, slug, fromMins, toMins) {
 
 export async function checkSevenRooms(watch) {
   try {
-    const { restaurant, date, timeFrom, timeTo, venueSlug, flexDays } = watch;
+    const { restaurant, date, timeFrom, timeTo, venueSlug, flexDays, dayPriority, idealTime, toleranceMinutes, allowedWeekdays } = watch;
     const slug = venueSlug || restaurant.toLowerCase().replace(/[^a-z0-9]+/g, '');
     const wasGuessed = !venueSlug;
 
-    const [fromH, fromM] = (timeFrom || '17:00').split(':').map(Number);
-    const [toH, toM] = (timeTo || '22:00').split(':').map(Number);
-    const fromMins = fromH * 60 + fromM;
-    const toMins = toH * 60 + toM;
+    let fromMins, toMins, targetIdealMins;
+    if (idealTime) {
+      targetIdealMins = timeToMinutesLocal(idealTime);
+      fromMins = targetIdealMins - (toleranceMinutes || 60);
+      toMins = targetIdealMins + (toleranceMinutes || 60);
+    } else {
+      const [fromH, fromM] = (timeFrom || '17:00').split(':').map(Number);
+      const [toH, toM] = (timeTo || '22:00').split(':').map(Number);
+      fromMins = fromH * 60 + fromM;
+      toMins = toH * 60 + toM;
+      targetIdealMins = Math.round((fromMins + toMins) / 2);
+    }
 
     const numDays = Math.max(1, parseInt(flexDays) || 1);
     const bookingUrl = `https://www.sevenrooms.com/reservations/create/${slug}`;
 
+    let datesToCheck = [];
+    if (Array.isArray(dayPriority) && dayPriority.length > 0) {
+      for (const weekday of dayPriority) {
+        const d = dateInRange(date, numDays, weekday);
+        if (d) datesToCheck.push(d);
+      }
+    } else {
+      for (let i = 0; i < numDays; i++) {
+        const checkDate = i === 0 ? date : addDays(date, i);
+        if (Array.isArray(allowedWeekdays) && allowedWeekdays.length < 7) {
+          const dow = new Date(checkDate + 'T12:00:00').getDay();
+          if (!allowedWeekdays.includes(dow)) continue;
+        }
+        datesToCheck.push(checkDate);
+      }
+    }
+
     let firstDayDiagnostic = null;
 
-    for (let i = 0; i < numDays; i++) {
-      const checkDate = i === 0 ? date : addDays(date, i);
-
-      if (Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7) {
-        const dow = new Date(checkDate + 'T12:00:00').getDay();
-        if (!watch.allowedWeekdays.includes(dow)) continue;
-      }
-
+    for (let idx = 0; idx < datesToCheck.length; idx++) {
+      const checkDate = datesToCheck[idx];
       const result = await checkOneDate(watch, checkDate, slug, fromMins, toMins);
 
       if (!result.ok) {
-        if (i === 0) {
+        if (idx === 0) {
           const reason = wasGuessed
             ? `Guessed "${slug}" as the venue, but that didn't work — paste this restaurant's direct SevenRooms link to fix it`
             : (result.friendlyReason || `SevenRooms returned ${result.httpStatus}`);
@@ -124,21 +152,25 @@ export async function checkSevenRooms(watch) {
         continue;
       }
 
-      // Save diagnostic info from the first date checked, in case nothing matches anywhere
-      if (i === 0) {
-        firstDayDiagnostic = result;
-      }
+      if (idx === 0) firstDayDiagnostic = result;
 
       if (result.slots.length > 0) {
         const dateLabel = new Date(checkDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
         const guessNote = wasGuessed ? ` (guessed venue "${slug}" — correct!)` : '';
+
+        // Rank by closeness to ideal time
+        const sorted = [...result.slots].sort((a, b) => Math.abs(a.mins - targetIdealMins) - Math.abs(b.mins - targetIdealMins));
+        const best = sorted[0];
+        const allTimesStr = sorted.map(s => s.time).join(', ');
+
         return {
           available: true,
-          reason: numDays > 1
-            ? `Found ${result.slots.length} slot${result.slots.length === 1 ? '' : 's'} on ${dateLabel}: ${result.slots.join(', ')}${guessNote}`
-            : `Found ${result.slots.length} slot${result.slots.length === 1 ? '' : 's'}: ${result.slots.join(', ')}${guessNote}`,
-          slots: result.slots,
+          reason: numDays > 1 || datesToCheck.length > 1
+            ? `Best match: ${best.time} on ${dateLabel} (${sorted.length} total slot${sorted.length === 1 ? '' : 's'}: ${allTimesStr})${guessNote}`
+            : `Best match: ${best.time} (${sorted.length} total slot${sorted.length === 1 ? '' : 's'}: ${allTimesStr})${guessNote}`,
+          slots: sorted.map(s => s.time),
           matchedDate: checkDate,
+          matchedTime: best.time,
           bookingUrl,
           confirmedSlug: wasGuessed ? slug : undefined,
         };
@@ -147,8 +179,6 @@ export async function checkSevenRooms(watch) {
 
     const guessNote = wasGuessed ? ` (guessed venue "${slug}" — correct, just nothing open)` : '';
 
-    // Build a diagnostic message from the first day's raw data so we can
-    // actually see what SevenRooms offered, instead of a blind "not available"
     let diagnosticNote = '';
     if (firstDayDiagnostic) {
       if (firstDayDiagnostic.noShiftsAtAll) {
@@ -162,15 +192,15 @@ export async function checkSevenRooms(watch) {
           diagnosticNote = ` — times exist but none are directly bookable (e.g. ${sample}) — may require calling or joining a waitlist`;
         } else {
           const sample = bookable.slice(0, 8).map(t => formatTime(t.time)).join(', ');
-          diagnosticNote = ` — bookable times that day were: ${sample} (outside your ${formatTime(timeFrom || '17:00')}–${formatTime(timeTo || '22:00')} window)`;
+          diagnosticNote = ` — bookable times that day were: ${sample} (outside your preferred window)`;
         }
       }
     }
 
     return {
       available: false,
-      reason: (numDays > 1
-        ? `Checked ${numDays} days — no slots in your time window on any of them`
+      reason: (datesToCheck.length > 1
+        ? `Checked ${datesToCheck.length} day(s) — no slots in your preferred time on any of them`
         : 'No bookable slots in preferred time window') + guessNote + diagnosticNote,
       confirmedSlug: wasGuessed ? slug : undefined,
     };
@@ -179,4 +209,9 @@ export async function checkSevenRooms(watch) {
     console.error('SevenRooms check error:', err.message);
     return { available: false, reason: err.message };
   }
+}
+
+function timeToMinutesLocal(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
 }

@@ -19,19 +19,52 @@ function addDays(dateStr, days) {
   return d.toISOString().split('T')[0];
 }
 
+function daysBetween(dateStrA, dateStrB) {
+  const a = new Date(dateStrA + 'T12:00:00');
+  const b = new Date(dateStrB + 'T12:00:00');
+  return Math.round((b - a) / (1000 * 60 * 60 * 24));
+}
+
+function dateInRange(startDate, days, weekday) {
+  for (let i = 0; i < days; i++) {
+    const d = i === 0 ? startDate : addDays(startDate, i);
+    if (new Date(d + 'T12:00:00').getDay() === weekday) return d;
+  }
+  return null;
+}
+
 function checkWindowDaysRange(watch, today, defaultDays) {
   const numDays = Math.max(1, parseInt(watch.flexDays) || 1);
-  const windowDays = parseInt(watch.windowDays) || defaultDays;
+
+  let windowDays;
+  let usingFBD = false;
+  if (watch.furthestBookableDate && watch.furthestBookableObservedAt) {
+    windowDays = daysBetween(watch.furthestBookableObservedAt, watch.furthestBookableDate);
+    usingFBD = true;
+  } else {
+    windowDays = parseInt(watch.windowDays) || defaultDays;
+  }
+
   const todayDate = new Date(today + 'T12:00:00');
 
-  for (let i = 0; i < numDays; i++) {
-    const checkDate = i === 0 ? watch.date : addDays(watch.date, i);
-
-    if (Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7) {
-      const dow = new Date(checkDate + 'T12:00:00').getDay();
-      if (!watch.allowedWeekdays.includes(dow)) continue;
+  let datesToCheck = [];
+  if (Array.isArray(watch.dayPriority) && watch.dayPriority.length > 0) {
+    for (const weekday of watch.dayPriority) {
+      const d = dateInRange(watch.date, numDays, weekday);
+      if (d) datesToCheck.push(d);
     }
+  } else {
+    for (let i = 0; i < numDays; i++) {
+      const checkDate = i === 0 ? watch.date : addDays(watch.date, i);
+      if (Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7) {
+        const dow = new Date(checkDate + 'T12:00:00').getDay();
+        if (!watch.allowedWeekdays.includes(dow)) continue;
+      }
+      datesToCheck.push(checkDate);
+    }
+  }
 
+  for (const checkDate of datesToCheck) {
     const targetDate = new Date(checkDate + 'T12:00:00');
     const windowOpens = new Date(targetDate);
     windowOpens.setDate(windowOpens.getDate() - windowDays);
@@ -45,7 +78,7 @@ function checkWindowDaysRange(watch, today, defaultDays) {
   const firstWindowOpens = new Date(firstTarget);
   firstWindowOpens.setDate(firstWindowOpens.getDate() - windowDays);
   const daysUntilOpen = Math.ceil((firstWindowOpens - todayDate) / (1000 * 60 * 60 * 24));
-  return { open: false, daysUntilOpen, windowDays };
+  return { open: false, daysUntilOpen, windowDays, usingFBD };
 }
 
 export default async function handler(req, res) {

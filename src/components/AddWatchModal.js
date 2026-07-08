@@ -158,16 +158,26 @@ const emptyForm = {
   furthestBookableObservedAt: '',
   bookingUrl: '',
   venueSlug: '',
+  flexDays: 1,
+  // New rank-based model
+  dayPriority: [],
+  idealTime: '19:00',
+  toleranceMinutes: 60,
+  // Legacy fields, kept in sync for older checker code paths and old watches
   timeFrom: '18:00',
   timeTo: '21:00',
-  flexDays: 1,
   allowedWeekdays: [0, 1, 2, 3, 4, 5, 6],
 };
 
 export default function AddWatchModal({ onSave, onClose, editingWatch }) {
   const [form, setForm] = useState(() =>
     editingWatch
-      ? { ...emptyForm, ...editingWatch, allowedWeekdays: editingWatch.allowedWeekdays || [0,1,2,3,4,5,6] }
+      ? { ...emptyForm, ...editingWatch,
+          allowedWeekdays: editingWatch.allowedWeekdays || [0,1,2,3,4,5,6],
+          dayPriority: editingWatch.dayPriority || [],
+          idealTime: editingWatch.idealTime || '19:00',
+          toleranceMinutes: editingWatch.toleranceMinutes || 60,
+        }
       : emptyForm
   );
   const [saving, setSaving] = useState(false);
@@ -181,12 +191,18 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
     setForm(f => ({ ...f, bookingUrl: url, venueSlug: slug || f.venueSlug }));
   };
 
-  const toggleWeekday = (day) => {
+  // Tapping a day appends it to the end of the priority list (or removes it
+  // if already ranked). Order of taps IS the preference order — no drag
+  // handles needed.
+  const toggleDayPriority = (day) => {
     setForm(f => {
-      const has = f.allowedWeekdays.includes(day);
-      const next = has ? f.allowedWeekdays.filter(d => d !== day) : [...f.allowedWeekdays, day];
-      // Never allow zero days selected — fall back to all days rather than an impossible watch
-      return { ...f, allowedWeekdays: next.length === 0 ? [0,1,2,3,4,5,6] : next };
+      const has = f.dayPriority.includes(day);
+      const nextPriority = has ? f.dayPriority.filter(d => d !== day) : [...f.dayPriority, day];
+      // Keep legacy allowedWeekdays in sync: if any days are ranked, only
+      // those are "allowed"; if none are ranked, all days are allowed
+      // (matches the old default-all-days behavior).
+      const nextAllowed = nextPriority.length === 0 ? [0,1,2,3,4,5,6] : nextPriority;
+      return { ...f, dayPriority: nextPriority, allowedWeekdays: nextAllowed };
     });
   };
 
@@ -195,7 +211,21 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
   const handleSave = async () => {
     if (!valid) return;
     setSaving(true);
-    await onSave(form);
+    // Derive legacy timeFrom/timeTo from the new ideal-time + tolerance
+    // model, so checkers that haven't been updated yet still work sensibly.
+    const [ih, im] = form.idealTime.split(':').map(Number);
+    const idealMins = ih * 60 + im;
+    const fromMins = Math.max(0, idealMins - form.toleranceMinutes);
+    const toMins = Math.min(23 * 60 + 59, idealMins + form.toleranceMinutes);
+    const toHHMM = (m) => `${Math.floor(m / 60).toString().padStart(2, '0')}:${(m % 60).toString().padStart(2, '0')}`;
+
+    const dataToSave = {
+      ...form,
+      timeFrom: toHHMM(fromMins),
+      timeTo: toHHMM(toMins),
+    };
+
+    await onSave(dataToSave);
     onClose();
   };
 
@@ -258,21 +288,23 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
             )}
           </div>
 
-          {/* Specific weekdays within the range — e.g. only Mon/Wed/Thu/Sat */}
+          {/* Day priority — tap in the order you'd prefer them */}
           {form.flexDays > 1 && (
             <div>
               <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                Only check these days <span style={{ color: 'var(--text-dim)', fontWeight: 'normal' }}>(optional)</span>
+                Which days, in order of preference
               </p>
               <div style={{ display: 'flex', gap: 6 }}>
                 {WEEKDAYS.map(w => {
-                  const active = form.allowedWeekdays.includes(w.value);
+                  const rank = form.dayPriority.indexOf(w.value);
+                  const active = rank !== -1;
                   return (
                     <button
                       key={w.value}
-                      onClick={() => toggleWeekday(w.value)}
+                      onClick={() => toggleDayPriority(w.value)}
                       style={{
                         flex: 1,
+                        position: 'relative',
                         background: active ? 'var(--gold)' : 'var(--bg-secondary)',
                         color: active ? '#0f0e0c' : 'var(--text-dim)',
                         border: `1px solid ${active ? 'var(--gold)' : 'var(--border)'}`,
@@ -282,16 +314,52 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
                         fontWeight: 600,
                       }}
                     >
+                      {active && (
+                        <span style={{
+                          position: 'absolute', top: -6, right: -4,
+                          background: '#0f0e0c', color: 'var(--gold)',
+                          border: '1px solid var(--gold)', borderRadius: '50%',
+                          width: 16, height: 16, fontSize: 9, fontWeight: 700,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          {rank + 1}
+                        </span>
+                      )}
                       {w.label}
                     </button>
                   );
                 })}
               </div>
               <p style={{ color: 'var(--text-secondary)', fontSize: 11, marginTop: 6 }}>
-                All days selected by default. Tap to exclude days you don't want checked (e.g. days you already have plans).
+                {form.dayPriority.length === 0
+                  ? "Tap days in the order you'd take them — e.g. Saturday first, then Friday as backup. Leave blank to check all days equally."
+                  : `We'll check ${WEEKDAYS.find(w => w.value === form.dayPriority[0])?.label} first, then move down your list only if it's not available.`}
               </p>
             </div>
           )}
+
+          {/* Ideal time + tolerance, replacing a plain start/end range */}
+          <div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              Ideal time
+            </p>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <select value={form.idealTime} onChange={e => set('idealTime', e.target.value)} style={{ flex: 1 }}>
+                {TIMES.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
+              </select>
+              <span style={{ color: 'var(--text-dim)', fontSize: 13, flexShrink: 0 }}>±</span>
+              <select value={form.toleranceMinutes} onChange={e => set('toleranceMinutes', Number(e.target.value))} style={{ flex: 1 }}>
+                <option value={30}>30 min</option>
+                <option value={60}>1 hour</option>
+                <option value={90}>1.5 hours</option>
+                <option value={120}>2 hours</option>
+                <option value={180}>3 hours</option>
+              </select>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 11, marginTop: 6 }}>
+              We'll pick whichever open slot lands closest to {formatTime(form.idealTime)}, within your tolerance.
+            </p>
+          </div>
 
           {/* Platform + party size */}
           <div style={{ display: 'flex', gap: 10 }}>
@@ -301,22 +369,6 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
             <select value={form.partySize} onChange={e => set('partySize', Number(e.target.value))} style={{ flex: 1 }}>
               {[1,2,3,4,5,6,7,8].map(n => <option key={n} value={n}>{n} {n === 1 ? 'guest' : 'guests'}</option>)}
             </select>
-          </div>
-
-          {/* Preferred time range */}
-          <div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-              Preferred time window
-            </p>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <select value={form.timeFrom} onChange={e => set('timeFrom', e.target.value)} style={{ flex: 1 }}>
-                {TIMES.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
-              </select>
-              <span style={{ color: 'var(--text-dim)', fontSize: 13, flexShrink: 0 }}>to</span>
-              <select value={form.timeTo} onChange={e => set('timeTo', e.target.value)} style={{ flex: 1 }}>
-                {TIMES.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
-              </select>
-            </div>
           </div>
 
           {(form.platform === 'opentable' || form.platform === 'thefork') && (
