@@ -91,22 +91,33 @@ async function callTool(token, sessionId, toolName, args) {
   }
 }
 
-async function findRestaurantId(token, sessionId, restaurant, city) {
+async function findRestaurantId(token, sessionId, restaurant, city, date, timeFrom, timeTo, partySize) {
+  const [fromH, fromM] = (timeFrom || '17:00').split(':').map(Number);
+  const [toH, toM] = (timeTo || '22:00').split(':').map(Number);
+  const midMins = Math.round(((fromH * 60 + fromM) + (toH * 60 + toM)) / 2);
+  const midH = Math.floor(midMins / 60).toString().padStart(2, '0');
+  const midM = (midMins % 60).toString().padStart(2, '0');
+
   const result = await callTool(token, sessionId, 'search_restaurants', {
     query: restaurant,
     city: city,
+    date: date,
+    time: `${midH}:${midM}`,
+    party_size: partySize,
   });
 
-  console.log('OpenTable MCP search_restaurants raw result:', JSON.stringify(result).slice(0, 1500));
+  console.log('OpenTable MCP search_restaurants raw result (with date/time):', JSON.stringify(result).slice(0, 3000));
 
   // Expecting an array of restaurant objects with an id/name; be defensive about shape
-  const list = Array.isArray(result) ? result : (result?.restaurants || result?.results || []);
-  if (!list || list.length === 0) return null;
+  const list = Array.isArray(result) ? result : (result?.restaurants || result?.results || result?.result || []);
+  if (!list || list.length === 0) return { id: null, slots: null };
 
   const match = list[0];
   const id = match?.id || match?.restaurant_id || match?.rid || null;
-  console.log('OpenTable MCP resolved restaurant match:', JSON.stringify(match), 'id used:', id);
-  return id;
+  console.log('OpenTable MCP resolved restaurant match:', JSON.stringify(match).slice(0, 1500));
+  // If the search itself returned slot-level data, capture it — may save us a second paid call
+  const slots = match?.slots || match?.available_times || null;
+  return { id, slots };
 }
 
 async function checkOneDate(token, sessionId, restaurantId, date, partySize, timeFrom, timeTo) {
@@ -145,14 +156,10 @@ export async function checkOpenTableReal(watch) {
 
     const sessionId = await initSession(token);
 
-    // One-time diagnostic: list the actual tool schemas so we stop guessing
-    // parameter names. This is a free MCP protocol call, not a billed event.
-    const toolsList = await mcpCall(token, 'tools/list', {}, sessionId);
-    console.log('OpenTable MCP tools/list:', JSON.stringify(toolsList.body).slice(0, 4000));
-
     let restaurantId = openTableRestaurantId;
     if (!restaurantId) {
-      restaurantId = await findRestaurantId(token, sessionId, restaurant, city);
+      const found = await findRestaurantId(token, sessionId, restaurant, city, date, timeFrom, timeTo, partySize);
+      restaurantId = found.id;
       if (!restaurantId) {
         return { available: false, reason: `Couldn't find "${restaurant}" on OpenTable via search` };
       }
