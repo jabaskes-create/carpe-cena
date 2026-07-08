@@ -18,8 +18,15 @@ function addDays(dateStr, days) {
   return d.toISOString().split('T')[0];
 }
 
-// For window-based platforms (OpenTable, TheFork): checks each date in the
-// flexible range and returns the earliest one whose booking window has opened
+function daysBetween(dateStrA, dateStrB) {
+  const a = new Date(dateStrA + 'T12:00:00');
+  const b = new Date(dateStrB + 'T12:00:00');
+  return Math.round((b - a) / (1000 * 60 * 60 * 24));
+}
+
+// For window-based platforms (TheFork, and OpenTable's free fallback):
+// checks each date in the flexible range and returns the earliest one
+// whose booking window has opened, per a simple days-in-advance guess.
 function checkWindowDaysRange(watch, today, defaultDays) {
   const numDays = Math.max(1, parseInt(watch.flexDays) || 1);
   const windowDays = parseInt(watch.windowDays) || defaultDays;
@@ -42,6 +49,48 @@ function checkWindowDaysRange(watch, today, defaultDays) {
     }
   }
   return { open: false };
+}
+
+// Adaptive check-frequency gate for paid OpenTable checks.
+//
+// If the person told us the furthest date they can currently see as
+// bookable (furthestBookableDate + the day they observed it), we compute
+// a predicted window-open date and ramp up check frequency as that date
+// approaches — checking weekly while far out, then every 3 days, then daily
+// starting a full week before the predicted date as a safety buffer against
+// restaurants that release in blocks rather than a smooth rolling window.
+//
+// Without that data point, we fall back to a deliberately sparser schedule
+// (weekly until 30 days out, then twice-weekly, then daily in the final
+// week) — both to control cost when checking blind, and to nudge people
+// toward providing the furthest-bookable-date for better results.
+function getCheckIntervalDays(watch, today) {
+  let referenceGapDays;
+
+  if (watch.furthestBookableDate && watch.furthestBookableObservedAt) {
+    const leadDays = daysBetween(watch.furthestBookableObservedAt, watch.furthestBookableDate);
+    const predictedOpenDate = addDays(watch.date, -leadDays);
+    referenceGapDays = daysBetween(today, predictedOpenDate);
+
+    if (referenceGapDays > 21) return 7;
+    if (referenceGapDays > 7) return 3;
+    return 1;
+  }
+
+  // No FBD provided — sparser, penalized default schedule
+  referenceGapDays = daysBetween(today, watch.date);
+  if (referenceGapDays > 30) return 7;
+  if (referenceGapDays > 7) return 4; // roughly twice weekly
+  return 1;
+}
+
+function isCheckDueToday(watch, today) {
+  const interval = getCheckIntervalDays(watch, today);
+  const last = watch.lastAutoCheckedAt?.toDate ? watch.lastAutoCheckedAt.toDate() : null;
+  if (!last) return true;
+  const lastDateStr = last.toISOString().split('T')[0];
+  const elapsedDays = daysBetween(lastDateStr, today);
+  return elapsedDays >= interval;
 }
 
 export default async function handler(req, res) {
@@ -71,22 +120,26 @@ export default async function handler(req, res) {
       result = await checkResy(watch);
 
     } else if (watch.platform === 'opentable') {
-      // Gate the paid real-availability check behind the free window heuristic —
-      // no point spending $0.05/check on dates where the booking window
-      // almost certainly hasn't opened yet.
-      const windowCheck = checkWindowDaysRange(watch, today, 30);
-
-      if (windowCheck.open && process.env.APIFY_API_TOKEN) {
-        result = await checkOpenTableReal(watch);
-        if (result.confirmedRestaurantId && !watch.openTableRestaurantId) {
-          await db.collection('watches').doc(watch.id).update({ openTableRestaurantId: result.confirmedRestaurantId });
+      if (process.env.APIFY_API_TOKEN) {
+        // Adaptive gate: only spend money on days this watch is actually due
+        if (isCheckDueToday(watch, today)) {
+          result = await checkOpenTableReal(watch);
+          await db.collection('watches').doc(watch.id).update({ lastAutoCheckedAt: new Date() });
+          if (result.confirmedRestaurantId && !watch.openTableRestaurantId) {
+            await db.collection('watches').doc(watch.id).update({ openTableRestaurantId: result.confirmedRestaurantId });
+          }
+        } else {
+          result = { available: false, reason: 'Not due for a check yet (adaptive schedule)' };
         }
-      } else if (windowCheck.open) {
-        // No Apify token configured — fall back to the old window-only signal
-        const bookingUrl = watch.bookingUrl || `https://www.opentable.com/s?covers=${watch.partySize}&dateTime=${windowCheck.matchedDate}T${watch.timeFrom || '19:00'}&term=${encodeURIComponent(watch.restaurant)}&location=${encodeURIComponent(watch.city)}`;
-        result = { available: true, bookingUrl, matchedDate: windowCheck.matchedDate, windowJustOpened: true, reason: 'Booking window is open (real-time check not configured)' };
       } else {
-        result = { available: false, reason: 'Booking window has not opened yet' };
+        // No Apify token configured — fall back to the free window-only signal
+        const windowCheck = checkWindowDaysRange(watch, today, 30);
+        if (windowCheck.open) {
+          const bookingUrl = watch.bookingUrl || `https://www.opentable.com/s?covers=${watch.partySize}&dateTime=${windowCheck.matchedDate}T${watch.timeFrom || '19:00'}&term=${encodeURIComponent(watch.restaurant)}&location=${encodeURIComponent(watch.city)}`;
+          result = { available: true, bookingUrl, matchedDate: windowCheck.matchedDate, windowJustOpened: true, reason: 'Booking window is open (real-time check not configured)' };
+        } else {
+          result = { available: false, reason: 'Booking window has not opened yet' };
+        }
       }
 
     } else if (watch.platform === 'thefork') {
@@ -147,7 +200,7 @@ export default async function handler(req, res) {
       await db.collection('watches').doc(watch.id).update({ status: 'available', matchedDate: result.matchedDate || watch.date });
       results.push({ id: watch.id, restaurant: watch.restaurant, available: true });
     } else {
-      results.push({ id: watch.id, restaurant: watch.restaurant, available: false });
+      results.push({ id: watch.id, restaurant: watch.restaurant, available: false, reason: result.reason });
     }
   }
 

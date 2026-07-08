@@ -154,6 +154,8 @@ const emptyForm = {
   platform: 'resy',
   autoBook: false,
   windowDays: '',
+  furthestBookableDate: '',
+  furthestBookableObservedAt: '',
   bookingUrl: '',
   venueSlug: '',
   timeFrom: '18:00',
@@ -319,18 +321,33 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
 
           {(form.platform === 'opentable' || form.platform === 'thefork') && (
             <div>
-              <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                Booking window (days in advance)
+              <p style={{ color: 'var(--gold)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 700 }}>
+                Furthest bookable date you currently see
               </p>
               <input
-                type="number"
-                placeholder={form.platform === 'opentable' ? 'Default: 30 days' : 'Default: 60 days'}
-                value={form.windowDays}
-                onChange={e => set('windowDays', e.target.value)}
+                type="date"
+                value={form.furthestBookableDate || ''}
+                onChange={e => {
+                  set('furthestBookableDate', e.target.value);
+                  // Capture "today" as the observation date — this anchors
+                  // the lead-time calculation regardless of when the watch
+                  // is later edited or re-saved.
+                  set('furthestBookableObservedAt', e.target.value ? new Date().toISOString().split('T')[0] : '');
+                }}
               />
-              <p style={{ color: 'var(--text-secondary)', fontSize: 11, marginTop: 6 }}>
-                We'll email you when this window opens. Leave blank to use the default.
+              <p style={{ color: 'var(--text-secondary)', fontSize: 11, marginTop: 6, lineHeight: 1.5 }}>
+                Open {form.platform === 'opentable' ? 'OpenTable' : 'TheFork'} right now and look at the furthest date it'll let you book. This makes checking dramatically more efficient — <strong style={{ color: 'var(--gold)' }}>with it, we check as often as daily right when your window is likely to open.</strong> Without it, we fall back to a much sparser schedule (weekly, then twice-weekly) since we're checking blind.
               </p>
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ color: 'var(--text-dim)', fontSize: 11, cursor: 'pointer' }}>Advanced: override days-in-advance manually</summary>
+                <input
+                  type="number"
+                  placeholder={form.platform === 'opentable' ? 'Default: 30 days' : 'Default: 60 days'}
+                  value={form.windowDays}
+                  onChange={e => set('windowDays', e.target.value)}
+                  style={{ marginTop: 8 }}
+                />
+              </details>
             </div>
           )}
 
