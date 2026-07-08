@@ -116,7 +116,7 @@ async function checkOneDate(token, sessionId, restaurantId, date, partySize) {
     party_size: partySize,
   });
 
-  console.log('OpenTable MCP check_availability raw result:', JSON.stringify(result).slice(0, 1500));
+  console.log('OpenTable MCP check_availability raw result:', JSON.stringify(result).slice(0, 6000));
 
   // Expecting something like { slots: [{ time: "19:00", ... }, ...] }
   const slots = result?.slots || result?.times || (Array.isArray(result) ? result : []);
