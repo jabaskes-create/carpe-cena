@@ -174,7 +174,7 @@ export default function WatchCard({ watch, onDelete, onEdit, isPast }) {
             {checking ? 'Checking…' : cooldownSeconds > 0 ? `Wait ${cooldownSeconds}s…` : '🔍 Test this watch'}
           </button>
           <span style={{ color: 'var(--text-dim)', fontSize: 11, marginLeft: 8 }}>
-            Verifies setup — daily automatic checks do the real monitoring
+            Verifies setup — automatic checks (on an adaptive schedule) do the real monitoring
           </span>
 
           {checkResult && (

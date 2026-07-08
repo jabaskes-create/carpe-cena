@@ -37,7 +37,9 @@ export default function HomePage() {
   const saveEditedWatch = async (data) => {
     const { id, ...fields } = data;
     // Editing implies the person wants fresh eyes on this watch —
-    // reset it back to "watching" so it re-enters the daily check cycle
+    // reset it back to "watching" so it re-enters the check cycle
+    // (the cron itself runs daily; whether THIS watch gets a real
+    // check on any given day depends on its adaptive schedule)
     // rather than sitting stale in "Completed" with an outdated match.
     await updateDoc(doc(db, 'watches', id), {
       ...fields,
