@@ -109,11 +109,22 @@ async function findRestaurantId(token, sessionId, restaurant, city) {
   return id;
 }
 
-async function checkOneDate(token, sessionId, restaurantId, date, partySize) {
+async function checkOneDate(token, sessionId, restaurantId, date, partySize, timeFrom, timeTo) {
+  // The API appears to cap results (~10 slots) starting from the earliest
+  // time of day, so evening slots can be cut off entirely unless we tell it
+  // which time we actually want. Pass the midpoint of the window as a hint.
+  const [fromH, fromM] = (timeFrom || '17:00').split(':').map(Number);
+  const [toH, toM] = (timeTo || '22:00').split(':').map(Number);
+  const midMins = Math.round(((fromH * 60 + fromM) + (toH * 60 + toM)) / 2);
+  const midH = Math.floor(midMins / 60).toString().padStart(2, '0');
+  const midM = (midMins % 60).toString().padStart(2, '0');
+  const preferredTime = `${midH}:${midM}`;
+
   const result = await callTool(token, sessionId, 'check_availability', {
     restaurant: String(restaurantId),
     date,
     party_size: partySize,
+    time: preferredTime,
   });
 
   console.log('OpenTable MCP check_availability raw result:', JSON.stringify(result).slice(0, 6000));
@@ -151,7 +162,7 @@ export async function checkOpenTableReal(watch) {
 
     for (let i = 0; i < numDays; i++) {
       const checkDate = i === 0 ? date : addDays(date, i);
-      const slots = await checkOneDate(token, sessionId, restaurantId, checkDate, partySize);
+      const slots = await checkOneDate(token, sessionId, restaurantId, checkDate, partySize, timeFrom, timeTo);
 
       const inWindow = slots.filter(s => {
         const timeStr = s.time || s.startTime || '';
