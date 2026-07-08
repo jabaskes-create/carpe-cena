@@ -89,7 +89,14 @@ async function checkOneDate(watch, date, slug, fromMins, toMins) {
       if (slot.type !== 'book') continue;
       const slotMins = parseTimeToMinutes(slot.time);
       if (slotMins !== null && slotMins >= fromMins && slotMins <= toMins) {
-        allSlots.push({ time: slot.time, mins: slotMins });
+        allSlots.push({
+          time: slot.time,
+          mins: slotMins,
+          // Raw fields needed to actually book this slot later
+          accessPersistentId: slot.access_persistent_id,
+          shiftPersistentId: shift.shift_persistent_id,
+          requiresCreditCard: slot.requires_credit_card || false,
+        });
       }
     }
   }
@@ -173,6 +180,13 @@ export async function checkSevenRooms(watch) {
           matchedTime: best.time,
           bookingUrl,
           confirmedSlug: wasGuessed ? slug : undefined,
+          // Raw fields needed if this watch has auto-booking enabled
+          bookingFields: {
+            venueSlug: slug,
+            accessPersistentId: best.accessPersistentId,
+            shiftPersistentId: best.shiftPersistentId,
+            requiresCreditCard: best.requiresCreditCard,
+          },
         };
       }
     }

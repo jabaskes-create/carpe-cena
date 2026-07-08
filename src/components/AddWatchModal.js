@@ -153,6 +153,10 @@ const emptyForm = {
   partySize: 2,
   platform: 'resy',
   autoBook: false,
+  guestFirstName: '',
+  guestLastName: '',
+  guestPhone: '',
+  cardLast4: '',
   windowDays: '',
   furthestBookableDate: '',
   furthestBookableObservedAt: '',
@@ -441,8 +445,48 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
               onChange={e => set('autoBook', e.target.checked)}
               style={{ width: 'auto' }}
             />
-            Auto-book when available (where supported)
+            Auto-book when available (SevenRooms only, currently in testing)
           </label>
+
+          {form.autoBook && (
+            <div style={{
+              background: 'rgba(201, 168, 76, 0.08)', border: '1px solid var(--gold-dim)',
+              borderRadius: 8, padding: 14
+            }}>
+              <p style={{ color: 'var(--gold)', fontSize: 12, fontWeight: 700, marginBottom: 10 }}>
+                ⚠️ Auto-booking is in dry-run testing — it will log what it would book, but won't actually reserve anything yet.
+              </p>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                <input
+                  placeholder="First name"
+                  value={form.guestFirstName || ''}
+                  onChange={e => set('guestFirstName', e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <input
+                  placeholder="Last name"
+                  value={form.guestLastName || ''}
+                  onChange={e => set('guestLastName', e.target.value)}
+                  style={{ flex: 1 }}
+                />
+              </div>
+              <input
+                placeholder="Phone number"
+                value={form.guestPhone || ''}
+                onChange={e => set('guestPhone', e.target.value)}
+                style={{ marginBottom: 10 }}
+              />
+              <input
+                placeholder="Card last 4 digits (only needed for some reservations)"
+                value={form.cardLast4 || ''}
+                onChange={e => set('cardLast4', e.target.value)}
+                maxLength={4}
+              />
+              <p style={{ color: 'var(--text-secondary)', fontSize: 11, marginTop: 8 }}>
+                We never store your full card number — only the last 4 digits, used to reference a card already saved on your SevenRooms account.
+              </p>
+            </div>
+          )}
 
           <button
             onClick={handleSave}
