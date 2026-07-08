@@ -145,6 +145,11 @@ export async function checkOpenTableReal(watch) {
 
     const sessionId = await initSession(token);
 
+    // One-time diagnostic: list the actual tool schemas so we stop guessing
+    // parameter names. This is a free MCP protocol call, not a billed event.
+    const toolsList = await mcpCall(token, 'tools/list', {}, sessionId);
+    console.log('OpenTable MCP tools/list:', JSON.stringify(toolsList.body).slice(0, 4000));
+
     let restaurantId = openTableRestaurantId;
     if (!restaurantId) {
       restaurantId = await findRestaurantId(token, sessionId, restaurant, city);
