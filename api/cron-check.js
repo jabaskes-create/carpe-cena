@@ -3,6 +3,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { Resend } from 'resend';
 import { checkResy } from './check-resy.js';
 import { checkSevenRooms } from './check-sevenrooms.js';
+import { checkOpenTableReal } from './check-opentable-mcp.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
@@ -64,10 +65,22 @@ export default async function handler(req, res) {
       result = await checkResy(watch);
 
     } else if (watch.platform === 'opentable') {
+      // Gate the paid real-availability check behind the free window heuristic —
+      // no point spending $0.05/check on dates where the booking window
+      // almost certainly hasn't opened yet.
       const windowCheck = checkWindowDaysRange(watch, today, 30);
-      if (windowCheck.open) {
+
+      if (windowCheck.open && process.env.APIFY_API_TOKEN) {
+        result = await checkOpenTableReal(watch);
+        if (result.confirmedRestaurantId && !watch.openTableRestaurantId) {
+          await db.collection('watches').doc(watch.id).update({ openTableRestaurantId: result.confirmedRestaurantId });
+        }
+      } else if (windowCheck.open) {
+        // No Apify token configured — fall back to the old window-only signal
         const bookingUrl = watch.bookingUrl || `https://www.opentable.com/s?covers=${watch.partySize}&dateTime=${windowCheck.matchedDate}T${watch.timeFrom || '19:00'}&term=${encodeURIComponent(watch.restaurant)}&location=${encodeURIComponent(watch.city)}`;
-        result = { available: true, bookingUrl, matchedDate: windowCheck.matchedDate, windowJustOpened: true };
+        result = { available: true, bookingUrl, matchedDate: windowCheck.matchedDate, windowJustOpened: true, reason: 'Booking window is open (real-time check not configured)' };
+      } else {
+        result = { available: false, reason: 'Booking window has not opened yet' };
       }
 
     } else if (watch.platform === 'thefork') {

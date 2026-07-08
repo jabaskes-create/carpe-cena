@@ -5,6 +5,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { checkResy } from './check-resy.js';
 import { checkSevenRooms } from './check-sevenrooms.js';
+import { checkOpenTableReal } from './check-opentable-mcp.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
@@ -34,7 +35,6 @@ function checkWindowDaysRange(watch, today, defaultDays) {
     }
   }
 
-  // None open yet — report how long until the earliest one opens
   const firstTarget = new Date(watch.date + 'T12:00:00');
   const firstWindowOpens = new Date(firstTarget);
   firstWindowOpens.setDate(firstWindowOpens.getDate() - windowDays);
@@ -64,14 +64,21 @@ export default async function handler(req, res) {
 
   } else if (watch.platform === 'opentable') {
     const w = checkWindowDaysRange(watch, today, 30);
-    result = w.open
-      ? { available: true, reason: 'Booking window is open', matchedDate: w.matchedDate }
-      : { available: false, reason: `Window opens in ${w.daysUntilOpen} day${w.daysUntilOpen === 1 ? '' : 's'} (${w.windowDays}-day advance booking)` };
+    if (w.open && process.env.APIFY_API_TOKEN) {
+      result = await checkOpenTableReal(watch);
+      if (result.confirmedRestaurantId && !watch.openTableRestaurantId) {
+        await db.collection('watches').doc(watch.id).update({ openTableRestaurantId: result.confirmedRestaurantId });
+      }
+    } else if (w.open) {
+      result = { available: true, reason: 'Booking window is open (real-time check not configured — add APIFY_API_TOKEN)' };
+    } else {
+      result = { available: false, reason: `Window opens in ${w.daysUntilOpen} day${w.daysUntilOpen === 1 ? '' : 's'} (${w.windowDays}-day advance booking)` };
+    }
 
   } else if (watch.platform === 'thefork') {
     const w = checkWindowDaysRange(watch, today, 60);
     result = w.open
-      ? { available: true, reason: 'Booking window is open', matchedDate: w.matchedDate }
+      ? { available: true, reason: 'Booking window is open' }
       : { available: false, reason: `Window opens in ${w.daysUntilOpen} day${w.daysUntilOpen === 1 ? '' : 's'} (${w.windowDays}-day advance booking)` };
 
   } else if (watch.platform === 'sevenrooms') {
