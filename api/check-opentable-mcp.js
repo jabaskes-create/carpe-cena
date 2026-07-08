@@ -155,7 +155,10 @@ export async function checkOpenTableReal(watch) {
 
       const inWindow = slots.filter(s => {
         const timeStr = s.time || s.startTime || '';
-        const m = timeStr.match(/^(\d{1,2}):(\d{2})/);
+        // OpenTable returns full ISO datetimes like "2026-07-14T11:00" —
+        // pull just the time-of-day portion after "T"
+        const timePart = timeStr.includes('T') ? timeStr.split('T')[1] : timeStr;
+        const m = timePart.match(/^(\d{1,2}):(\d{2})/);
         if (!m) return false;
         const mins = parseInt(m[1]) * 60 + parseInt(m[2]);
         return mins >= fromMins && mins <= toMins;
