@@ -94,7 +94,7 @@ async function callTool(token, sessionId, toolName, args) {
 async function findRestaurantId(token, sessionId, restaurant, city) {
   const result = await callTool(token, sessionId, 'search_restaurants', {
     query: restaurant,
-    location: city,
+    city: city,
   });
 
   console.log('OpenTable MCP search_restaurants raw result:', JSON.stringify(result).slice(0, 1500));
