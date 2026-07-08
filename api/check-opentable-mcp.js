@@ -67,6 +67,8 @@ async function callTool(token, sessionId, toolName, args) {
     arguments: args,
   }, sessionId);
 
+  console.log(`OpenTable MCP callTool(${toolName}) httpStatus=${httpStatus} body=`, JSON.stringify(body).slice(0, 1000));
+
   if (!body) {
     throw new Error(`MCP tool call returned unparseable response (HTTP ${httpStatus}): ${raw.slice(0, 300)}`);
   }
@@ -94,6 +96,8 @@ async function findRestaurantId(token, sessionId, restaurant, city) {
     query: restaurant,
     location: city,
   });
+
+  console.log('OpenTable MCP search_restaurants raw result:', JSON.stringify(result).slice(0, 1500));
 
   // Expecting an array of restaurant objects with an id/name; be defensive about shape
   const list = Array.isArray(result) ? result : (result?.restaurants || result?.results || []);
