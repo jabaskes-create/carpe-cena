@@ -104,7 +104,9 @@ async function findRestaurantId(token, sessionId, restaurant, city) {
   if (!list || list.length === 0) return null;
 
   const match = list[0];
-  return match?.id || match?.restaurant_id || match?.rid || null;
+  const id = match?.id || match?.restaurant_id || match?.rid || null;
+  console.log('OpenTable MCP resolved restaurant match:', JSON.stringify(match), 'id used:', id);
+  return id;
 }
 
 async function checkOneDate(token, sessionId, restaurantId, date, partySize) {
@@ -113,6 +115,8 @@ async function checkOneDate(token, sessionId, restaurantId, date, partySize) {
     date,
     partySize,
   });
+
+  console.log('OpenTable MCP check_availability raw result:', JSON.stringify(result).slice(0, 1500));
 
   // Expecting something like { slots: [{ time: "19:00", ... }, ...] }
   const slots = result?.slots || result?.times || (Array.isArray(result) ? result : []);
