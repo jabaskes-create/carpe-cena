@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const PLATFORM_COLORS = {
   resy: '#e74c3c',
@@ -16,6 +16,8 @@ const PLATFORM_LABELS = {
   thefork: 'TheFork',
 };
 
+const WEEKDAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
 function formatTime(t) {
   if (!t) return '';
   const [h, m] = t.split(':').map(Number);
@@ -24,9 +26,16 @@ function formatTime(t) {
   return `${hour}:${m.toString().padStart(2, '0')}${ampm}`;
 }
 
-export default function WatchCard({ watch, onDelete, isPast }) {
+export default function WatchCard({ watch, onDelete, onEdit, isPast }) {
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState(null);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const t = setTimeout(() => setCooldownSeconds(s => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldownSeconds]);
 
   const dateStr = watch.flexDays > 1
     ? (() => {
@@ -40,6 +49,11 @@ export default function WatchCard({ watch, onDelete, isPast }) {
     : new Date(watch.date + 'T12:00:00').toLocaleDateString('en-US', {
         weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
       });
+
+  // Show which specific weekdays are targeted, if the person narrowed it down
+  const weekdayStr = (watch.flexDays > 1 && Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7)
+    ? watch.allowedWeekdays.slice().sort().map(d => WEEKDAY_LABELS[d]).join(', ')
+    : null;
 
   const statusColor = watch.status === 'available' ? 'var(--green)'
     : watch.status === 'booked' ? 'var(--gold)'
@@ -64,11 +78,18 @@ export default function WatchCard({ watch, onDelete, isPast }) {
       const res = await fetch(`/api/check-single?watchId=${watch.id}`);
       const data = await res.json();
       setCheckResult(data);
+      if (data.cooldown && data.waitSeconds) {
+        setCooldownSeconds(data.waitSeconds);
+      } else {
+        setCooldownSeconds(60); // normal cooldown after a real check
+      }
     } catch (err) {
       setCheckResult({ available: false, reason: 'Check failed — try again' });
     }
     setChecking(false);
   };
+
+  const checkDisabled = checking || cooldownSeconds > 0;
 
   return (
     <div style={{
@@ -97,6 +118,11 @@ export default function WatchCard({ watch, onDelete, isPast }) {
           <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
             {watch.city} · {dateStr} · {watch.partySize} {watch.partySize === 1 ? 'guest' : 'guests'}
           </p>
+          {weekdayStr && (
+            <p style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: 3 }}>
+              📅 Only: {weekdayStr}
+            </p>
+          )}
           {matchedDateStr && watch.status !== 'watching' && (
             <p style={{ color: 'var(--green)', fontSize: 12, marginTop: 3, fontWeight: 600 }}>
               ✓ Matched: {matchedDateStr}
@@ -113,12 +139,20 @@ export default function WatchCard({ watch, onDelete, isPast }) {
         </div>
 
         {!isPast && (
-          <button onClick={() => onDelete(watch.id)} style={{
-            background: 'transparent', color: 'var(--text-dim)',
-            fontSize: 18, padding: '4px 8px', flexShrink: 0
-          }}>
-            ×
-          </button>
+          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+            <button onClick={() => onEdit(watch)} style={{
+              background: 'transparent', color: 'var(--text-dim)',
+              fontSize: 15, padding: '4px 8px'
+            }} title="Edit">
+              ✎
+            </button>
+            <button onClick={() => onDelete(watch.id)} style={{
+              background: 'transparent', color: 'var(--text-dim)',
+              fontSize: 18, padding: '4px 8px'
+            }} title="Delete">
+              ×
+            </button>
+          </div>
         )}
       </div>
 
@@ -126,27 +160,30 @@ export default function WatchCard({ watch, onDelete, isPast }) {
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
           <button
             onClick={handleCheckNow}
-            disabled={checking}
+            disabled={checkDisabled}
             style={{
               background: 'transparent',
               border: '1px solid var(--gold-dim)',
-              color: 'var(--gold)',
+              color: checkDisabled ? 'var(--text-dim)' : 'var(--gold)',
               fontSize: 12,
               padding: '6px 12px',
               borderRadius: 6,
               fontWeight: 600,
             }}
           >
-            {checking ? 'Checking…' : '🔍 Check now'}
+            {checking ? 'Checking…' : cooldownSeconds > 0 ? `Wait ${cooldownSeconds}s…` : '🔍 Test this watch'}
           </button>
+          <span style={{ color: 'var(--text-dim)', fontSize: 11, marginLeft: 8 }}>
+            Verifies setup — daily automatic checks do the real monitoring
+          </span>
 
           {checkResult && (
             <div style={{
               marginTop: 10,
               padding: '10px 12px',
               borderRadius: 8,
-              background: checkResult.available ? 'rgba(46, 204, 113, 0.1)' : 'rgba(154, 144, 128, 0.1)',
-              border: `1px solid ${checkResult.available ? 'var(--green)' : 'var(--border)'}`,
+              background: checkResult.available ? 'rgba(46, 204, 113, 0.15)' : 'rgba(196, 188, 171, 0.12)',
+              border: `1px solid ${checkResult.available ? 'var(--green)' : 'var(--text-dim)'}`,
             }}>
               <p style={{
                 fontSize: 13,
@@ -154,10 +191,10 @@ export default function WatchCard({ watch, onDelete, isPast }) {
                 fontWeight: 600,
                 marginBottom: checkResult.reason ? 4 : 0,
               }}>
-                {checkResult.available ? '✓ Available now!' : '○ Not yet available'}
+                {checkResult.available ? '✓ Available now!' : checkResult.cooldown ? '⏱ Please wait' : '○ Not yet available'}
               </p>
               {checkResult.reason && (
-                <p style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+                <p style={{ fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.5 }}>
                   {checkResult.reason}
                 </p>
               )}

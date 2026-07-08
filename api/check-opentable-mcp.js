@@ -139,6 +139,12 @@ export async function checkOpenTableReal(watch) {
 
     for (let i = 0; i < numDays; i++) {
       const checkDate = i === 0 ? date : addDays(date, i);
+
+      if (Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7) {
+        const dow = new Date(checkDate + 'T12:00:00').getDay();
+        if (!watch.allowedWeekdays.includes(dow)) continue;
+      }
+
       const { id, slots } = await searchOneDate(token, sessionId, restaurant, city, checkDate, timeFrom, timeTo, partySize);
 
       if (!id) {

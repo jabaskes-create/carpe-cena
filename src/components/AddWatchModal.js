@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const PLATFORMS = [
   { value: 'resy', label: 'Resy' },
@@ -14,6 +14,16 @@ const TIMES = [
   '19:00', '19:30', '20:00', '20:30', '21:00', '21:30', '22:00'
 ];
 
+const WEEKDAYS = [
+  { value: 0, label: 'Su' },
+  { value: 1, label: 'Mo' },
+  { value: 2, label: 'Tu' },
+  { value: 3, label: 'We' },
+  { value: 4, label: 'Th' },
+  { value: 5, label: 'Fr' },
+  { value: 6, label: 'Sa' },
+];
+
 function formatTime(t) {
   if (!t) return '';
   const [h, m] = t.split(':').map(Number);
@@ -23,14 +33,11 @@ function formatTime(t) {
 }
 
 // Extracts the venue slug from a SevenRooms URL
-// e.g. https://www.sevenrooms.com/reservations/create/wiltons?... -> "wiltons"
-// e.g. https://www.sevenrooms.com/explore/wiltons/reservations/... -> "wiltons"
 function extractSevenRoomsSlug(url) {
   if (!url) return '';
   try {
     const match = url.match(/sevenrooms\.com\/(?:reservations\/create|explore)\/([a-z0-9-]+)/i);
     if (match) return match[1];
-    // Fallback: check ?venues= query param
     const venuesMatch = url.match(/[?&]venues=([a-z0-9-]+)/i);
     if (venuesMatch) return venuesMatch[1];
   } catch (e) {}
@@ -46,8 +53,9 @@ function CalendarPicker({ value, onChange }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const [viewYear, setViewYear] = useState(today.getFullYear());
-  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const initial = value ? new Date(value + 'T12:00:00') : today;
+  const [viewYear, setViewYear] = useState(initial.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initial.getMonth());
 
   const selected = value ? new Date(value + 'T12:00:00') : null;
 
@@ -82,7 +90,6 @@ function CalendarPicker({ value, onChange }) {
       background: 'var(--bg-secondary)', border: '1px solid var(--border)',
       borderRadius: 10, padding: 16
     }}>
-      {/* Month nav */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <button onClick={prevMonth} style={{ background: 'transparent', color: 'var(--gold)', fontSize: 18, padding: '0 8px' }}>‹</button>
         <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 14 }}>
@@ -91,14 +98,12 @@ function CalendarPicker({ value, onChange }) {
         <button onClick={nextMonth} style={{ background: 'transparent', color: 'var(--gold)', fontSize: 18, padding: '0 8px' }}>›</button>
       </div>
 
-      {/* Day headers */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
         {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
           <div key={d} style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: 11, padding: '2px 0' }}>{d}</div>
         ))}
       </div>
 
-      {/* Day cells */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
         {cells.map((day, i) => {
           if (!day) return <div key={`empty-${i}`} />;
@@ -132,7 +137,6 @@ function CalendarPicker({ value, onChange }) {
         })}
       </div>
 
-      {/* Selected date display */}
       {value && (
         <div style={{ marginTop: 10, textAlign: 'center', color: 'var(--gold)', fontSize: 13 }}>
           {new Date(value + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
@@ -142,30 +146,46 @@ function CalendarPicker({ value, onChange }) {
   );
 }
 
-export default function AddWatchModal({ onSave, onClose }) {
-  const [form, setForm] = useState({
-    restaurant: '',
-    city: '',
-    date: '',
-    partySize: 2,
-    platform: 'resy',
-    autoBook: false,
-    windowDays: '',
-    bookingUrl: '',
-    venueSlug: '',
-    timeFrom: '18:00',
-    timeTo: '21:00',
-    flexDays: 1,
-  });
+const emptyForm = {
+  restaurant: '',
+  city: '',
+  date: '',
+  partySize: 2,
+  platform: 'resy',
+  autoBook: false,
+  windowDays: '',
+  bookingUrl: '',
+  venueSlug: '',
+  timeFrom: '18:00',
+  timeTo: '21:00',
+  flexDays: 1,
+  allowedWeekdays: [0, 1, 2, 3, 4, 5, 6],
+};
+
+export default function AddWatchModal({ onSave, onClose, editingWatch }) {
+  const [form, setForm] = useState(() =>
+    editingWatch
+      ? { ...emptyForm, ...editingWatch, allowedWeekdays: editingWatch.allowedWeekdays || [0,1,2,3,4,5,6] }
+      : emptyForm
+  );
   const [saving, setSaving] = useState(false);
+
+  const isEditing = !!editingWatch;
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  // Special handler for the SevenRooms booking URL —
-  // auto-extracts the venue slug so the person never has to find it manually
   const setSevenRoomsUrl = (url) => {
     const slug = extractSevenRoomsSlug(url);
     setForm(f => ({ ...f, bookingUrl: url, venueSlug: slug || f.venueSlug }));
+  };
+
+  const toggleWeekday = (day) => {
+    setForm(f => {
+      const has = f.allowedWeekdays.includes(day);
+      const next = has ? f.allowedWeekdays.filter(d => d !== day) : [...f.allowedWeekdays, day];
+      // Never allow zero days selected — fall back to all days rather than an impossible watch
+      return { ...f, allowedWeekdays: next.length === 0 ? [0,1,2,3,4,5,6] : next };
+    });
   };
 
   const valid = form.restaurant.trim() && form.city.trim() && form.date;
@@ -190,7 +210,7 @@ export default function AddWatchModal({ onSave, onClose }) {
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <h2 style={{ fontFamily: 'var(--font)', color: 'var(--gold)', fontWeight: 'normal', fontSize: 20 }}>
-            Watch a Restaurant
+            {isEditing ? 'Edit Watch' : 'Watch a Restaurant'}
           </h2>
           <button onClick={onClose} style={{ background: 'transparent', color: 'var(--text-dim)', fontSize: 22 }}>×</button>
         </div>
@@ -207,7 +227,6 @@ export default function AddWatchModal({ onSave, onClose }) {
             onChange={e => set('city', e.target.value)}
           />
 
-          {/* Calendar picker */}
           <CalendarPicker value={form.date} onChange={v => set('date', v)} />
 
           {/* Flexible date range */}
@@ -227,15 +246,50 @@ export default function AddWatchModal({ onSave, onClose }) {
             </select>
             {form.date && form.flexDays > 1 && (
               <p style={{ color: 'var(--gold)', fontSize: 12, marginTop: 6 }}>
-                We'll check every day from {new Date(form.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} through{' '}
+                Range: {new Date(form.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} through{' '}
                 {(() => {
                   const end = new Date(form.date + 'T12:00:00');
                   end.setDate(end.getDate() + form.flexDays - 1);
                   return end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                })()}, and email you as soon as any day opens up.
+                })()}
               </p>
             )}
           </div>
+
+          {/* Specific weekdays within the range — e.g. only Mon/Wed/Thu/Sat */}
+          {form.flexDays > 1 && (
+            <div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                Only check these days <span style={{ color: 'var(--text-dim)', fontWeight: 'normal' }}>(optional)</span>
+              </p>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {WEEKDAYS.map(w => {
+                  const active = form.allowedWeekdays.includes(w.value);
+                  return (
+                    <button
+                      key={w.value}
+                      onClick={() => toggleWeekday(w.value)}
+                      style={{
+                        flex: 1,
+                        background: active ? 'var(--gold)' : 'var(--bg-secondary)',
+                        color: active ? '#0f0e0c' : 'var(--text-dim)',
+                        border: `1px solid ${active ? 'var(--gold)' : 'var(--border)'}`,
+                        borderRadius: 6,
+                        padding: '8px 0',
+                        fontSize: 12,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {w.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: 11, marginTop: 6 }}>
+                All days selected by default. Tap to exclude days you don't want checked (e.g. days you already have plans).
+              </p>
+            </div>
+          )}
 
           {/* Platform + party size */}
           <div style={{ display: 'flex', gap: 10 }}>
@@ -274,7 +328,7 @@ export default function AddWatchModal({ onSave, onClose }) {
                 value={form.windowDays}
                 onChange={e => set('windowDays', e.target.value)}
               />
-              <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 6 }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: 11, marginTop: 6 }}>
                 We'll email you when this window opens. Leave blank to use the default.
               </p>
             </div>
@@ -290,9 +344,9 @@ export default function AddWatchModal({ onSave, onClose }) {
                 value={form.bookingUrl}
                 onChange={e => setSevenRoomsUrl(e.target.value)}
               />
-              <p style={{ color: isGoogleMapsReserveUrl(form.bookingUrl) ? 'var(--red)' : 'var(--text-dim)', fontSize: 11, marginTop: 6 }}>
+              <p style={{ color: isGoogleMapsReserveUrl(form.bookingUrl) ? '#ff8a75' : 'var(--text-secondary)', fontSize: 11, marginTop: 6 }}>
                 {isGoogleMapsReserveUrl(form.bookingUrl)
-                  ? "⚠️ This is a Google Maps link — we can't read the venue from it. Find the restaurant's direct SevenRooms link instead (often on their own website's Reservations page)."
+                  ? "⚠️ This is a Google Maps link — we can't read the venue from it. Find the restaurant's direct SevenRooms link instead."
                   : form.venueSlug
                   ? `✓ Found venue: ${form.venueSlug}`
                   : "Paste any sevenrooms.com link for this restaurant — we'll figure out the rest."}
@@ -331,7 +385,7 @@ export default function AddWatchModal({ onSave, onClose }) {
               fontSize: 15, marginTop: 4
             }}
           >
-            {saving ? 'Saving…' : 'Start Watching'}
+            {saving ? 'Saving…' : isEditing ? 'Save Changes' : 'Start Watching'}
           </button>
         </div>
       </div>

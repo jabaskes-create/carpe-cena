@@ -27,6 +27,12 @@ function checkWindowDaysRange(watch, today, defaultDays) {
 
   for (let i = 0; i < numDays; i++) {
     const checkDate = i === 0 ? watch.date : addDays(watch.date, i);
+
+    if (Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7) {
+      const dow = new Date(checkDate + 'T12:00:00').getDay();
+      if (!watch.allowedWeekdays.includes(dow)) continue;
+    }
+
     const targetDate = new Date(checkDate + 'T12:00:00');
     const windowOpens = new Date(targetDate);
     windowOpens.setDate(windowOpens.getDate() - windowDays);

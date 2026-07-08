@@ -106,6 +106,12 @@ export async function checkSevenRooms(watch) {
 
     for (let i = 0; i < numDays; i++) {
       const checkDate = i === 0 ? date : addDays(date, i);
+
+      if (Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7) {
+        const dow = new Date(checkDate + 'T12:00:00').getDay();
+        if (!watch.allowedWeekdays.includes(dow)) continue;
+      }
+
       const result = await checkOneDate(watch, checkDate, slug, fromMins, toMins);
 
       if (!result.ok) {

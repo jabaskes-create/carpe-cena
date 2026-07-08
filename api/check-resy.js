@@ -9,7 +9,7 @@ function addDays(dateStr, days) {
 
 export async function checkResy(watch) {
   try {
-    const { city, restaurant, date, partySize, flexDays } = watch;
+    const { city, restaurant, date, partySize, flexDays, allowedWeekdays } = watch;
 
     // Step 1: Search for venue (only need to do this once)
     const searchRes = await fetch(
@@ -32,9 +32,15 @@ export async function checkResy(watch) {
     const bookingUrl = `https://resy.com/cities/${encodeURIComponent(city.toLowerCase())}/${venue.url_slug || ''}`;
     const numDays = Math.max(1, parseInt(flexDays) || 1);
 
-    // Step 2: Check availability for each date in the range
+    // Step 2: Check availability for each date in the range,
+    // skipping any weekday the person explicitly excluded
     for (let i = 0; i < numDays; i++) {
       const checkDate = i === 0 ? date : addDays(date, i);
+
+      if (Array.isArray(allowedWeekdays) && allowedWeekdays.length < 7) {
+        const dow = new Date(checkDate + 'T12:00:00').getDay();
+        if (!allowedWeekdays.includes(dow)) continue;
+      }
 
       const availRes = await fetch(
         `https://api.resy.com/4/find?lat=0&long=0&day=${checkDate}&party_size=${partySize}&venue_id=${venueId}`,

@@ -3,7 +3,7 @@ import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import {
   collection, query, where, onSnapshot,
-  addDoc, deleteDoc, doc, serverTimestamp
+  addDoc, deleteDoc, updateDoc, doc, serverTimestamp
 } from 'firebase/firestore';
 import WatchCard from '../components/WatchCard';
 import AddWatchModal from '../components/AddWatchModal';
@@ -11,6 +11,7 @@ import AddWatchModal from '../components/AddWatchModal';
 export default function HomePage() {
   const [watches, setWatches] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingWatch, setEditingWatch] = useState(null);
   const user = auth.currentUser;
 
   useEffect(() => {
@@ -33,8 +34,35 @@ export default function HomePage() {
     });
   };
 
+  const saveEditedWatch = async (data) => {
+    const { id, ...fields } = data;
+    // Editing implies the person wants fresh eyes on this watch —
+    // reset it back to "watching" so it re-enters the daily check cycle
+    // rather than sitting stale in "Completed" with an outdated match.
+    await updateDoc(doc(db, 'watches', id), {
+      ...fields,
+      status: 'watching',
+      matchedDate: null,
+    });
+  };
+
   const deleteWatch = async (id) => {
     await deleteDoc(doc(db, 'watches', id));
+  };
+
+  const openAdd = () => {
+    setEditingWatch(null);
+    setShowAdd(true);
+  };
+
+  const openEdit = (watch) => {
+    setEditingWatch(watch);
+    setShowAdd(true);
+  };
+
+  const closeModal = () => {
+    setShowAdd(false);
+    setEditingWatch(null);
   };
 
   // Only show watches whose target date hasn't passed yet.
@@ -63,7 +91,7 @@ export default function HomePage() {
         </button>
       </div>
 
-      <button onClick={() => setShowAdd(true)} style={{
+      <button onClick={openAdd} style={{
         width: '100%', background: 'var(--gold)', color: '#0f0e0c',
         padding: '14px', borderRadius: 10, fontWeight: 600, fontSize: 15,
         marginBottom: 28, letterSpacing: 0.3
@@ -94,7 +122,7 @@ export default function HomePage() {
               </p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {watching.map(w => <WatchCard key={w.id} watch={w} onDelete={deleteWatch} />)}
+                {watching.map(w => <WatchCard key={w.id} watch={w} onDelete={deleteWatch} onEdit={openEdit} />)}
               </div>
             )}
           </div>
@@ -106,14 +134,20 @@ export default function HomePage() {
                 ✓ Completed ({completed.length})
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {completed.map(w => <WatchCard key={w.id} watch={w} onDelete={deleteWatch} />)}
+                {completed.map(w => <WatchCard key={w.id} watch={w} onDelete={deleteWatch} onEdit={openEdit} />)}
               </div>
             </div>
           )}
         </>
       )}
 
-      {showAdd && <AddWatchModal onSave={addWatch} onClose={() => setShowAdd(false)} />}
+      {showAdd && (
+        <AddWatchModal
+          onSave={editingWatch ? saveEditedWatch : addWatch}
+          onClose={closeModal}
+          editingWatch={editingWatch}
+        />
+      )}
     </div>
   );
 }

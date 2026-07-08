@@ -26,6 +26,12 @@ function checkWindowDaysRange(watch, today, defaultDays) {
 
   for (let i = 0; i < numDays; i++) {
     const checkDate = i === 0 ? watch.date : addDays(watch.date, i);
+
+    if (Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7) {
+      const dow = new Date(checkDate + 'T12:00:00').getDay();
+      if (!watch.allowedWeekdays.includes(dow)) continue;
+    }
+
     const targetDate = new Date(checkDate + 'T12:00:00');
     const windowOpens = new Date(targetDate);
     windowOpens.setDate(windowOpens.getDate() - windowDays);
@@ -57,6 +63,27 @@ export default async function handler(req, res) {
   const watch = { id: doc.id, ...doc.data() };
   const today = new Date().toISOString().split('T')[0];
 
+  // Cooldown: this button exists to verify a watch is configured correctly,
+  // not to snipe reservations by hammering it. Some platforms (OpenTable)
+  // cost real money per check, so a per-watch cooldown protects against
+  // both abuse and accidental runaway costs.
+  const COOLDOWN_MS = 60 * 1000;
+  const lastCheckedAt = watch.lastManualCheckAt?.toDate ? watch.lastManualCheckAt.toDate() : null;
+  if (lastCheckedAt) {
+    const elapsed = Date.now() - lastCheckedAt.getTime();
+    if (elapsed < COOLDOWN_MS) {
+      const waitSeconds = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
+      return res.status(429).json({
+        watchId,
+        restaurant: watch.restaurant,
+        available: false,
+        cooldown: true,
+        reason: `This is a setup-check, not a live sniper — please wait ${waitSeconds}s between checks.`,
+        waitSeconds,
+      });
+    }
+  }
+
   let result = { available: false, reason: 'Unknown platform' };
 
   if (watch.platform === 'resy') {
@@ -87,6 +114,8 @@ export default async function handler(req, res) {
       await db.collection('watches').doc(watch.id).update({ venueSlug: result.confirmedSlug });
     }
   }
+
+  await db.collection('watches').doc(watch.id).update({ lastManualCheckAt: new Date() });
 
   return res.status(200).json({
     watchId,
