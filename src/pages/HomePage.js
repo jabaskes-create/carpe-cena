@@ -9,6 +9,28 @@ import WatchCard from '../components/WatchCard';
 import AddWatchModal from '../components/AddWatchModal';
 import CalendarView from '../components/CalendarView';
 
+// Every calendar date a watch is actively covering — mirrors the same
+// logic used in CalendarView so both agree on what a watch "covers".
+function datesCoveredByWatch(watch) {
+  const numDays = Math.max(1, parseInt(watch.flexDays) || 1);
+  const start = new Date(watch.date + 'T12:00:00');
+  const dates = [];
+
+  const restrictToWeekdays = Array.isArray(watch.dayPriority) && watch.dayPriority.length > 0
+    ? watch.dayPriority
+    : (Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7 ? watch.allowedWeekdays : null);
+
+  for (let i = 0; i < numDays; i++) {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    if (restrictToWeekdays && !restrictToWeekdays.includes(d.getDay())) continue;
+    const iso = d.toISOString().split('T')[0];
+    if (Array.isArray(watch.excludedDates) && watch.excludedDates.includes(iso)) continue;
+    dates.push(iso);
+  }
+  return dates;
+}
+
 export default function HomePage() {
   const [watches, setWatches] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -68,21 +90,30 @@ export default function HomePage() {
     setEditingWatch(null);
   };
 
-  // Batch-clear: stop every watch touching a given date. Carpe Cena can't
-  // actually verify which restaurant (if any) the person booked — a match
-  // just means we found availability, not that they followed through — so
-  // rather than ask them to pick, this simply clears everything for the date.
-  const stopOthersForDate = async (dateISO, _unused, watchesOnThatDate) => {
+  // Stop searching for ONE specific date across every watch that covers it.
+  // A watch that still has other dates left just gets this one added to its
+  // exclusion list and keeps running. A watch whose only remaining date was
+  // this one gets deleted entirely, since there's nothing left to watch.
+  const stopDateForWatches = async (dateISO, _unused, watchesOnThatDate) => {
     if (watchesOnThatDate.length === 0) return;
 
     const dateLabel = new Date(dateISO + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
     const names = watchesOnThatDate.map(w => w.restaurant).join(', ');
     const confirmed = window.confirm(
-      `Stop watching ${watchesOnThatDate.length} restaurant${watchesOnThatDate.length === 1 ? '' : 's'} for ${dateLabel}?\n\n${names}\n\nThis can't be undone.`
+      `Stop searching for ${dateLabel} across ${watchesOnThatDate.length} restaurant${watchesOnThatDate.length === 1 ? '' : 's'}?\n\n${names}\n\nAny other dates these watches cover will keep being checked.`
     );
     if (!confirmed) return;
 
-    await Promise.all(watchesOnThatDate.map(w => deleteDoc(doc(db, 'watches', w.id))));
+    await Promise.all(watchesOnThatDate.map(async (w) => {
+      const remainingDates = datesCoveredByWatch(w).filter(d => d !== dateISO);
+      if (remainingDates.length === 0) {
+        // Nothing left to watch for this restaurant — remove it entirely
+        await deleteDoc(doc(db, 'watches', w.id));
+      } else {
+        const nextExcluded = Array.isArray(w.excludedDates) ? [...w.excludedDates, dateISO] : [dateISO];
+        await updateDoc(doc(db, 'watches', w.id), { excludedDates: nextExcluded });
+      }
+    }));
   };
 
   // Only show watches whose target date hasn't passed yet.
@@ -161,7 +192,7 @@ export default function HomePage() {
       ) : view === 'calendar' ? (
         <CalendarView
           watches={upcoming}
-          onStopOthers={stopOthersForDate}
+          onStopOthers={stopDateForWatches}
           onBack={() => setView('list')}
         />
       ) : (

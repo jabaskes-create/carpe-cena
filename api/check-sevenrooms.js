@@ -143,6 +143,10 @@ export async function checkSevenRooms(watch) {
       }
     }
 
+    if (Array.isArray(watch.excludedDates) && watch.excludedDates.length > 0) {
+      datesToCheck = datesToCheck.filter(d => !watch.excludedDates.includes(d));
+    }
+
     let firstDayDiagnostic = null;
 
     for (let idx = 0; idx < datesToCheck.length; idx++) {

@@ -182,8 +182,11 @@ export default function CalendarView({ watches, onStopOthers, onBack }) {
                   padding: '10px 14px', borderRadius: 8,
                 }}
               >
-                No longer need a reservation for this date — stop {selectedWatches.length === 1 ? 'this watch' : `all ${selectedWatches.length}`}
+                Stop searching for this date — {selectedWatches.length === 1 ? '1 restaurant' : `${selectedWatches.length} restaurants`}
               </button>
+              <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 8, lineHeight: 1.5 }}>
+                Only removes {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} from these watches. Any other dates they cover keep being checked as normal.
+              </p>
             </>
           )}
         </div>

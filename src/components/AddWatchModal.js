@@ -165,6 +165,7 @@ const emptyForm = {
   flexDays: 1,
   // New rank-based model
   dayPriority: [],
+  excludedDates: [],
   idealTime: '19:00',
   toleranceMinutes: 60,
   // Legacy fields, kept in sync for older checker code paths and old watches

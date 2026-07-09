@@ -64,6 +64,10 @@ function checkWindowDaysRange(watch, today, defaultDays) {
     }
   }
 
+  if (Array.isArray(watch.excludedDates) && watch.excludedDates.length > 0) {
+    datesToCheck = datesToCheck.filter(d => !watch.excludedDates.includes(d));
+  }
+
   for (const checkDate of datesToCheck) {
     const targetDate = new Date(checkDate + 'T12:00:00');
     const windowOpens = new Date(targetDate);
