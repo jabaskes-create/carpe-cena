@@ -148,8 +148,9 @@ export default function HomePage() {
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 }}>
         <div>
-          <h1 style={{ fontFamily: 'var(--font)', color: 'var(--gold)', fontSize: 28, fontWeight: 'normal' }}>
-            🍽️ Carpe Cena
+          <h1 style={{ fontFamily: 'var(--font)', color: 'var(--gold)', fontSize: 28, fontWeight: 'normal', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <img src="/icon-192.png" alt="" style={{ width: 36, height: 36, borderRadius: 8 }} />
+            Carpe Cena
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 2 }}>Seize the dinner</p>
         </div>
