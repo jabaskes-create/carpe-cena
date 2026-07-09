@@ -33,15 +33,6 @@ function dateInRange(startDate, days, weekday) {
   return null;
 }
 
-// For window-based platforms (TheFork, and OpenTable's free fallback):
-// checks candidate dates in priority order (if the person ranked specific
-// weekdays) or sequential order, and returns the earliest/highest-ranked
-// one whose booking window has opened.
-//
-// Lead time (days-in-advance the window opens) is sourced in priority order:
-// 1. Furthest-bookable-date observation, if provided — the most accurate
-// 2. Manual windowDays override, if provided
-// 3. Platform default
 function checkWindowDaysRange(watch, today, defaultDays) {
   const numDays = Math.max(1, parseInt(watch.flexDays) || 1);
   const todayDate = new Date(today + 'T12:00:00');
@@ -78,7 +69,6 @@ function checkWindowDaysRange(watch, today, defaultDays) {
     const targetDate = new Date(checkDate + 'T12:00:00');
     const windowOpens = new Date(targetDate);
     windowOpens.setDate(windowOpens.getDate() - leadDays);
-
     if (todayDate >= windowOpens) {
       return { open: true, matchedDate: checkDate };
     }
@@ -86,19 +76,6 @@ function checkWindowDaysRange(watch, today, defaultDays) {
   return { open: false };
 }
 
-// Adaptive check-frequency gate for paid OpenTable checks.
-//
-// If the person told us the furthest date they can currently see as
-// bookable (furthestBookableDate + the day they observed it), we compute
-// a predicted window-open date and ramp up check frequency as that date
-// approaches — checking weekly while far out, then every 3 days, then daily
-// starting a full week before the predicted date as a safety buffer against
-// restaurants that release in blocks rather than a smooth rolling window.
-//
-// Without that data point, we fall back to a deliberately sparser schedule
-// (weekly until 30 days out, then twice-weekly, then daily in the final
-// week) — both to control cost when checking blind, and to nudge people
-// toward providing the furthest-bookable-date for better results.
 function getCheckIntervalDays(watch, today) {
   let referenceGapDays;
 
@@ -112,10 +89,9 @@ function getCheckIntervalDays(watch, today) {
     return 1;
   }
 
-  // No FBD provided — sparser, penalized default schedule
   referenceGapDays = daysBetween(today, watch.date);
   if (referenceGapDays > 30) return 7;
-  if (referenceGapDays > 7) return 4; // roughly twice weekly
+  if (referenceGapDays > 7) return 4;
   return 1;
 }
 
@@ -128,27 +104,8 @@ function isCheckDueToday(watch, today) {
   return elapsedDays >= interval;
 }
 
-export default async function handler(req, res) {
-  if (req.headers['x-cron-secret'] !== process.env.CRON_SECRET) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const today = new Date().toISOString().split('T')[0];
-  console.log('Today:', today);
-
-  const snap = await db.collection('watches')
-    .where('status', '==', 'watching')
-    .get();
-
-  const watches = snap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
-    .filter(w => w.date >= today);
-
-  console.log(`Checking ${watches.length} active watches`);
-
-  const results = [];
-
-  for (const watch of watches) {
+async function processWatch(watch, today) {
+  try {
     let result = { available: false };
 
     if (watch.platform === 'resy') {
@@ -156,7 +113,6 @@ export default async function handler(req, res) {
 
     } else if (watch.platform === 'opentable') {
       if (process.env.APIFY_API_TOKEN) {
-        // Adaptive gate: only spend money on days this watch is actually due
         if (isCheckDueToday(watch, today)) {
           result = await checkOpenTableReal(watch);
           await db.collection('watches').doc(watch.id).update({ lastAutoCheckedAt: new Date() });
@@ -167,7 +123,6 @@ export default async function handler(req, res) {
           result = { available: false, reason: 'Not due for a check yet (adaptive schedule)' };
         }
       } else {
-        // No Apify token configured — fall back to the free window-only signal
         const windowCheck = checkWindowDaysRange(watch, today, 30);
         if (windowCheck.open) {
           const bookingUrl = watch.bookingUrl || `https://www.opentable.com/s?covers=${watch.partySize}&dateTime=${windowCheck.matchedDate}T${watch.timeFrom || '19:00'}&term=${encodeURIComponent(watch.restaurant)}&location=${encodeURIComponent(watch.city)}`;
@@ -185,15 +140,12 @@ export default async function handler(req, res) {
 
     } else if (watch.platform === 'sevenrooms') {
       result = await checkSevenRooms(watch);
-      // If we successfully guessed the venue slug, save it so future checks don't have to guess
       if (result.confirmedSlug && !watch.venueSlug) {
         await db.collection('watches').doc(watch.id).update({ venueSlug: result.confirmedSlug });
       }
     }
-    // Tock — coming next session
 
     if (result.available) {
-      // Attempt auto-booking if enabled for this watch (SevenRooms only, for now)
       let bookingAttempt = null;
       if (watch.autoBook && watch.platform === 'sevenrooms' && result.bookingFields) {
         bookingAttempt = await bookSevenRoomsReservation(watch, result);
@@ -208,7 +160,6 @@ export default async function handler(req, res) {
           weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
         });
 
-        // Use manually entered booking URL if provided
         if (watch.bookingUrl) result.bookingUrl = watch.bookingUrl;
         const isWindowAlert = result.windowJustOpened;
         const isFlexible = (parseInt(watch.flexDays) || 1) > 1;
@@ -258,11 +209,37 @@ export default async function handler(req, res) {
         matchedDate: result.matchedDate || watch.date,
         matchedTime: result.matchedTime || null,
       });
-      results.push({ id: watch.id, restaurant: watch.restaurant, available: true, booked: bookingAttempt?.booked || false });
+
+      return { id: watch.id, restaurant: watch.restaurant, available: true, booked: bookingAttempt?.booked || false };
     } else {
-      results.push({ id: watch.id, restaurant: watch.restaurant, available: false, reason: result.reason });
+      return { id: watch.id, restaurant: watch.restaurant, available: false, reason: result.reason };
     }
+  } catch (err) {
+    console.error(`Error processing watch ${watch.id} (${watch.restaurant}):`, err.message);
+    return { id: watch.id, restaurant: watch.restaurant, available: false, error: err.message };
   }
+}
+
+export default async function handler(req, res) {
+  if (req.query.secret !== process.env.CRON_SECRET &&
+      req.headers['x-cron-secret'] !== process.env.CRON_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  console.log('Today:', today);
+
+  const snap = await db.collection('watches')
+    .where('status', '==', 'watching')
+    .get();
+
+  const watches = snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(w => w.date >= today);
+
+  console.log(`Checking ${watches.length} active watches in parallel`);
+
+  const results = await Promise.all(watches.map(watch => processWatch(watch, today)));
 
   return res.status(200).json({ checked: watches.length, results });
 }
