@@ -50,7 +50,7 @@ function CalendarPicker({ value, onChange }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const initial = value ? new Date(value + 'T12:00:00') : today;
+  const initial = (value && value.length === 10) ? new Date(value + 'T12:00:00') : today;
   const [viewYear, setViewYear] = useState(initial.getFullYear());
   const [viewMonth, setViewMonth] = useState(initial.getMonth());
 
