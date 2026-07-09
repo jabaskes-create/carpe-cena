@@ -65,8 +65,12 @@ async function fetchSlotsForDate(venueId, checkDate, partySize) {
     }
   );
   const text = await availRes.text();
-  // DEBUG: show raw response
-  throw new Error(`DEBUG: ${text.slice(0, 300)}`);
+  try {
+    const availData = JSON.parse(text);
+    return availData?.results?.venues?.[0]?.slots || [];
+  } catch {
+    throw new Error(`Resy /4/find returned non-JSON (status ${availRes.status}): ${text.slice(0, 120)}`);
+  }
 }
 
 export async function checkResy(watch) {
