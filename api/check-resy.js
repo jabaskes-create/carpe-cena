@@ -92,7 +92,7 @@ export async function checkResy(watch) {
           geo: { latitude: 0, longitude: 0 },
           highlight: { pre_tag: '<b>', post_tag: '</b>' },
           per_page: 5,
-          query: restaurant,
+          query: `${restaurant} ${city}`,
           slot_filter: { day: date, party_size: parseInt(partySize) },
           types: ['venue', 'cuisine'],
         })
