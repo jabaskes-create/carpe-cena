@@ -56,8 +56,13 @@ async function fetchSlotsForDate(venueId, checkDate, partySize) {
       }
     }
   );
-  const availData = await availRes.json();
-  return availData?.results?.venues?.[0]?.slots || [];
+  const text = await availRes.text();
+  try {
+    const availData = JSON.parse(text);
+    return availData?.results?.venues?.[0]?.slots || [];
+  } catch {
+    throw new Error(`Resy API returned non-JSON (status ${availRes.status}): ${text.slice(0, 120)}`);
+  }
 }
 
 export async function checkResy(watch) {
@@ -74,8 +79,14 @@ export async function checkResy(watch) {
         }
       }
     );
-    const searchData = await searchRes.json();
-    const venues = searchData?.search?.hits;
+    const searchText = await searchRes.text();
+let searchData;
+try {
+  searchData = JSON.parse(searchText);
+} catch {
+  return { available: false, reason: `Resy search returned non-JSON (status ${searchRes.status}): ${searchText.slice(0, 120)}` };
+}
+const venues = searchData?.search?.hits;
     if (!venues || venues.length === 0) return { available: false, reason: 'Venue not found' };
 
     const venue = venues[0];
