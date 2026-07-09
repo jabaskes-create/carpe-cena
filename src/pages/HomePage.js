@@ -3,12 +3,12 @@ import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import {
   collection, query, where, onSnapshot,
-  addDoc, deleteDoc, updateDoc, doc, serverTimestamp
+  addDoc, deleteDoc, updateDoc, doc, serverTimestamp,
+  getDoc, setDoc
 } from 'firebase/firestore';
 import WatchCard from '../components/WatchCard';
 import AddWatchModal from '../components/AddWatchModal';
 import CalendarView from '../components/CalendarView';
-import SettingsModal from '../components/SettingsModal';
 
 function datesCoveredByWatch(watch) {
   const numDays = Math.max(1, parseInt(watch.flexDays) || 1);
@@ -30,12 +30,23 @@ function datesCoveredByWatch(watch) {
   return dates;
 }
 
+const FREQ_OPTIONS = [
+  { value: 0, label: 'No summary' },
+  { value: 1, label: 'Summary: weekly' },
+  { value: 2, label: 'Summary: 2×/week' },
+  { value: 3, label: 'Summary: 3×/week' },
+  { value: 4, label: 'Summary: 4×/week' },
+  { value: 5, label: 'Summary: 5×/week' },
+  { value: 6, label: 'Summary: 6×/week' },
+  { value: 7, label: 'Summary: daily' },
+];
+
 export default function HomePage() {
   const [watches, setWatches] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [editingWatch, setEditingWatch] = useState(null);
-  const [showSettings, setShowSettings] = useState(false);
   const [view, setView] = useState('list');
+  const [summaryFreq, setSummaryFreq] = useState(0);
   const user = auth.currentUser;
 
   useEffect(() => {
@@ -47,6 +58,22 @@ export default function HomePage() {
       setWatches(items);
     });
   }, [user]);
+
+  // Load summary frequency preference
+  useEffect(() => {
+    if (!user) return;
+    getDoc(doc(db, 'users', user.uid)).then(snap => {
+      if (snap.exists()) setSummaryFreq(snap.data().summaryFrequency || 0);
+    });
+  }, [user]);
+
+  const saveSummaryFreq = async (val) => {
+    setSummaryFreq(val);
+    await setDoc(doc(db, 'users', user.uid), {
+      email: user.email,
+      summaryFrequency: val,
+    }, { merge: true });
+  };
 
   const addWatch = async (data) => {
     await addDoc(collection(db, 'watches'), {
@@ -123,14 +150,16 @@ export default function HomePage() {
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 2 }}>Seize the dinner</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            onClick={() => setShowSettings(true)}
-            style={{ background: 'transparent', color: 'var(--text-dim)', fontSize: 18 }}
-            title="Settings"
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <select
+            value={summaryFreq}
+            onChange={e => saveSummaryFreq(Number(e.target.value))}
+            style={{ fontSize: 11, color: 'var(--text-dim)', background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 6px' }}
           >
-            ⚙️
-          </button>
+            {FREQ_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
           <button onClick={() => signOut(auth)} style={{
             background: 'transparent', color: 'var(--text-dim)', fontSize: 13
           }}>
@@ -227,13 +256,6 @@ export default function HomePage() {
           onSave={editingWatch ? saveEditedWatch : addWatch}
           onClose={closeModal}
           editingWatch={editingWatch}
-        />
-      )}
-
-      {showSettings && (
-        <SettingsModal
-          user={user}
-          onClose={() => setShowSettings(false)}
         />
       )}
     </div>
