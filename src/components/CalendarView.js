@@ -128,7 +128,7 @@ export default function CalendarView({ watches, onStopOthers, onBack, onAddWatch
                 onClick={() => handleDayClick(iso)}
                 disabled={isPast && isEmpty}
                 style={{
-                  aspectRatio: '1',
+                  height: 44,
                   background: isSelected ? 'var(--gold)' : isToday ? 'var(--bg-secondary)' : 'transparent',
                   border: `1px solid ${isSelected ? 'var(--gold)' : isEmpty && !isPast ? 'var(--border)' : 'var(--border)'}`,
                   borderRadius: 6,
