@@ -68,8 +68,10 @@ async function fetchSlotsForDate(venueId, checkDate, partySize) {
   const text = await availRes.text();
   try {
     const availData = JSON.parse(text);
-    return availData?.results?.venues?.[0]?.slots || [];
-  } catch {
+    const slots = availData?.results?.venues?.[0]?.slots || [];
+    throw new Error(`DEBUG: Got ${slots.length} slots. First: ${JSON.stringify(slots[0]?.date)}`);
+  } catch (e) {
+    if (e.message.startsWith('DEBUG')) throw e;
     throw new Error(`Resy /4/find returned non-JSON (status ${availRes.status}): ${text.slice(0, 120)}`);
   }
 }
