@@ -11,7 +11,6 @@ function addDays(dateStr, days) {
 }
 
 function dateInRange(startDate, days, weekday) {
-  // Finds the first occurrence of a given weekday within the flex range
   for (let i = 0; i < days; i++) {
     const d = i === 0 ? startDate : addDays(startDate, i);
     if (new Date(d + 'T12:00:00').getDay() === weekday) return d;
@@ -19,10 +18,6 @@ function dateInRange(startDate, days, weekday) {
   return null;
 }
 
-// Best-effort extraction of a slot's start time as "HH:MM" — Resy's response
-// shape isn't fully documented, so this tries a few likely field paths and
-// falls back gracefully to "unknown" (in which case we can't rank by time,
-// but the slot still counts as available).
 function extractSlotTime(slot) {
   const candidates = [
     slot?.date?.start,
@@ -55,6 +50,10 @@ async function fetchSlotsForDate(venueId, checkDate, partySize) {
         'X-Origin': 'https://resy.com',
         'X-Resy-Auth-Token': process.env.RESY_AUTH_TOKEN || '',
         'Content-Type': 'application/json',
+        'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://resy.com/',
+        'Origin': 'https://resy.com',
       },
       body: JSON.stringify({
         lat: 0,
@@ -66,14 +65,8 @@ async function fetchSlotsForDate(venueId, checkDate, partySize) {
     }
   );
   const text = await availRes.text();
-  try {
-    const availData = JSON.parse(text);
-    const slots = availData?.results?.venues?.[0]?.slots || [];
-    throw new Error(`DEBUG: Got ${slots.length} slots. First: ${JSON.stringify(slots[0]?.date)}`);
-  } catch (e) {
-    if (e.message.startsWith('DEBUG')) throw e;
-    throw new Error(`Resy /4/find returned non-JSON (status ${availRes.status}): ${text.slice(0, 120)}`);
-  }
+  // DEBUG: show raw response
+  throw new Error(`DEBUG: ${text.slice(0, 300)}`);
 }
 
 export async function checkResy(watch) {
@@ -81,7 +74,6 @@ export async function checkResy(watch) {
     const { city, restaurant, date, partySize, flexDays, allowedWeekdays, dayPriority, idealTime, toleranceMinutes, timeFrom, timeTo } = watch;
 
     // Step 1: Resolve venue ID
-    // Prefer direct slug lookup from bookingUrl — avoids unreliable search
     let venueId = null;
     let resolvedSlug = null;
     let locationCode = null;
@@ -89,13 +81,12 @@ export async function checkResy(watch) {
     if (watch.bookingUrl) {
       const match = watch.bookingUrl.match(/resy\.com\/cities\/([^/]+)\/venues\/([^/?]+)/);
       if (match) {
-        locationCode = match[1]; // e.g. "columbus-oh"
-        resolvedSlug = match[2]; // e.g. "mezcla"
+        locationCode = match[1];
+        resolvedSlug = match[2];
       }
     }
 
     if (resolvedSlug && locationCode) {
-      // Direct venue lookup by slug
       const venueRes = await fetch(
         `https://api.resy.com/3/venue?url_slug=${resolvedSlug}&location=${locationCode}`,
         {
@@ -115,7 +106,6 @@ export async function checkResy(watch) {
         return { available: false, reason: `Resy venue lookup returned non-JSON (status ${venueRes.status}): ${venueText.slice(0, 120)}` };
       }
     } else {
-      // Fall back to search if no bookingUrl provided
       const searchRes = await fetch(
         'https://api.resy.com/3/venuesearch/search',
         {
@@ -161,8 +151,6 @@ export async function checkResy(watch) {
 
     const numDays = Math.max(1, parseInt(flexDays) || 1);
 
-    // Determine time window: prefer the new ideal-time+tolerance model,
-    // fall back to the legacy timeFrom/timeTo range
     let fromMins, toMins;
     if (idealTime) {
       const idealMins = timeToMinutes(idealTime);
@@ -173,7 +161,6 @@ export async function checkResy(watch) {
       toMins = timeToMinutes(timeTo || '23:59');
     }
 
-    // Build the list of dates to check, in the right order
     let datesToCheck = [];
     if (Array.isArray(dayPriority) && dayPriority.length > 0) {
       for (const weekday of dayPriority) {
@@ -191,7 +178,6 @@ export async function checkResy(watch) {
       }
     }
 
-    // Drop any dates the person explicitly said to stop watching
     if (Array.isArray(watch.excludedDates) && watch.excludedDates.length > 0) {
       datesToCheck = datesToCheck.filter(d => !watch.excludedDates.includes(d));
     }
@@ -203,7 +189,6 @@ export async function checkResy(watch) {
       const dateLabel = new Date(checkDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
       if (fromMins === undefined) {
-        // No time preference at all — any slot on this date counts
         return {
           available: true,
           reason: numDays > 1 ? `Found ${slots.length} open slot(s) on ${dateLabel}` : `Found ${slots.length} open slot(s)`,
@@ -213,13 +198,11 @@ export async function checkResy(watch) {
         };
       }
 
-      // Try to rank by closeness to ideal time
       const withTimes = slots
         .map(s => ({ slot: s, time: extractSlotTime(s) }))
         .filter(s => s.time !== null);
 
       if (withTimes.length === 0) {
-        // Couldn't parse any slot times — fall back to "any slot counts"
         return {
           available: true,
           reason: numDays > 1
@@ -250,7 +233,6 @@ export async function checkResy(watch) {
           bookingUrl,
         };
       }
-      // No slots in this date's preferred time window — move to next candidate date
     }
 
     return {
