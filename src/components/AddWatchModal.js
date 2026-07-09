@@ -164,7 +164,7 @@ const emptyForm = {
   allowedWeekdays: [0, 1, 2, 3, 4, 5, 6],
 };
 
-export default function AddWatchModal({ onSave, onClose, editingWatch }) {
+export default function AddWatchModal({ onSave, onClose, editingWatch, prefilledDate }) {
   const [form, setForm] = useState(() =>
     editingWatch
       ? { ...emptyForm, ...editingWatch,
@@ -173,7 +173,7 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
           idealTime: editingWatch.idealTime || '19:00',
           toleranceMinutes: editingWatch.toleranceMinutes || 60,
         }
-      : emptyForm
+      : { ...emptyForm, date: prefilledDate || '' }
   );
   const [saving, setSaving] = useState(false);
 

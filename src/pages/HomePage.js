@@ -99,8 +99,11 @@ export default function HomePage() {
     await deleteDoc(doc(db, 'watches', id));
   };
 
-  const openAdd = () => {
+  const [prefilledDate, setPrefilledDate] = useState(null);
+
+  const openAdd = (date = null) => {
     setEditingWatch(null);
+    setPrefilledDate(date);
     setShowAdd(true);
   };
 
@@ -220,6 +223,7 @@ export default function HomePage() {
           watches={upcoming}
           onStopOthers={stopDateForWatches}
           onBack={() => setView('list')}
+          onAddWatch={(date) => openAdd(date)}
         />
       ) : (
         <>
@@ -256,6 +260,7 @@ export default function HomePage() {
           onSave={editingWatch ? saveEditedWatch : addWatch}
           onClose={closeModal}
           editingWatch={editingWatch}
+          prefilledDate={prefilledDate}
         />
       )}
     </div>

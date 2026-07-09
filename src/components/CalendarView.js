@@ -12,8 +12,6 @@ function toISODate(y, m, d) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-// Every calendar date a watch is actively covering — respects flexDays range
-// and, if set, dayPriority/allowedWeekdays narrowing.
 function datesCoveredByWatch(watch) {
   const numDays = Math.max(1, parseInt(watch.flexDays) || 1);
   const start = new Date(watch.date + 'T12:00:00');
@@ -32,8 +30,9 @@ function datesCoveredByWatch(watch) {
   return dates;
 }
 
-export default function CalendarView({ watches, onStopOthers, onBack }) {
+export default function CalendarView({ watches, onStopOthers, onBack, onAddWatch }) {
   const today = new Date();
+  const todayISO = today.toISOString().split('T')[0];
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [selectedDate, setSelectedDate] = useState(null);
@@ -50,7 +49,6 @@ export default function CalendarView({ watches, onStopOthers, onBack }) {
     else setViewMonth(m => m + 1);
   };
 
-  // Build a map of date -> [watches covering that date]
   const dateMap = {};
   for (const w of watches) {
     for (const d of datesCoveredByWatch(w)) {
@@ -66,62 +64,86 @@ export default function CalendarView({ watches, onStopOthers, onBack }) {
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
   const selectedWatches = selectedDate ? (dateMap[selectedDate] || []) : [];
+  const isPastDate = (iso) => iso < todayISO;
+
+  const handleDayClick = (iso) => {
+    const dayWatches = dateMap[iso] || [];
+    if (dayWatches.length === 0 && !isPastDate(iso)) {
+      // Empty future date — open Add Watch with date pre-filled
+      onAddWatch && onAddWatch(iso);
+    } else {
+      setSelectedDate(selectedDate === iso ? null : iso);
+    }
+  };
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <button onClick={onBack} style={{ background: 'transparent', color: 'var(--gold)', fontSize: 13, fontWeight: 600 }}>
           ← List view
+        </button>
+        <button
+          onClick={() => onAddWatch && onAddWatch(null)}
+          style={{
+            background: 'var(--gold)', color: '#0f0e0c',
+            fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 8,
+          }}
+        >
+          + Watch a Restaurant
         </button>
       </div>
 
       <div style={{
         background: 'var(--bg-card)', border: '1px solid var(--border)',
-        borderRadius: 12, padding: 20
+        borderRadius: 12, padding: 14,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <button onClick={prevMonth} style={{ background: 'transparent', color: 'var(--gold)', fontSize: 22, padding: '0 10px' }}>‹</button>
-          <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <button onClick={prevMonth} style={{ background: 'transparent', color: 'var(--gold)', fontSize: 20, padding: '0 8px' }}>‹</button>
+          <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 15 }}>
             {monthNames[viewMonth]} {viewYear}
           </span>
-          <button onClick={nextMonth} style={{ background: 'transparent', color: 'var(--gold)', fontSize: 22, padding: '0 10px' }}>›</button>
+          <button onClick={nextMonth} style={{ background: 'transparent', color: 'var(--gold)', fontSize: 20, padding: '0 8px' }}>›</button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 6 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginBottom: 4 }}>
           {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
-            <div key={d} style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: 11, padding: '2px 0' }}>{d}</div>
+            <div key={d} style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: 10, padding: '2px 0' }}>{d}</div>
           ))}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
           {cells.map((day, i) => {
             if (!day) return <div key={`empty-${i}`} />;
             const iso = toISODate(viewYear, viewMonth, day);
             const dayWatches = dateMap[iso] || [];
-            const isToday = new Date(new Date().toDateString()).getTime() === new Date(viewYear, viewMonth, day).getTime();
+            const isToday = iso === todayISO;
             const isSelected = selectedDate === iso;
+            const isPast = isPastDate(iso);
             const hasCompleted = dayWatches.some(w => w.status === 'available' || w.status === 'booked');
+            const isEmpty = dayWatches.length === 0;
 
             return (
               <button
                 key={day}
-                onClick={() => setSelectedDate(iso)}
+                onClick={() => handleDayClick(iso)}
+                disabled={isPast && isEmpty}
                 style={{
                   aspectRatio: '1',
                   background: isSelected ? 'var(--gold)' : isToday ? 'var(--bg-secondary)' : 'transparent',
-                  border: `1px solid ${isSelected ? 'var(--gold)' : 'var(--border)'}`,
-                  borderRadius: 8,
-                  padding: 4,
+                  border: `1px solid ${isSelected ? 'var(--gold)' : isEmpty && !isPast ? 'var(--border)' : 'var(--border)'}`,
+                  borderRadius: 6,
+                  padding: 3,
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'flex-start',
-                  cursor: 'pointer',
+                  cursor: isPast && isEmpty ? 'default' : 'pointer',
+                  opacity: isPast && isEmpty ? 0.3 : 1,
                 }}
               >
                 <span style={{
-                  fontSize: 13,
-                  color: isSelected ? '#0f0e0c' : 'var(--text-primary)',
+                  fontSize: 12,
+                  color: isSelected ? '#0f0e0c' : isEmpty && !isPast ? 'var(--text-dim)' : 'var(--text-primary)',
                   fontWeight: hasCompleted ? 700 : 400,
                 }}>
                   {day}
@@ -130,7 +152,7 @@ export default function CalendarView({ watches, onStopOthers, onBack }) {
                   <div style={{ display: 'flex', gap: 2, marginTop: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
                     {dayWatches.slice(0, 4).map((w, idx) => (
                       <span key={idx} style={{
-                        width: 5, height: 5, borderRadius: '50%',
+                        width: 4, height: 4, borderRadius: '50%',
                         background: isSelected ? '#0f0e0c' : (PLATFORM_COLORS[w.platform] || '#888'),
                       }} />
                     ))}
@@ -140,10 +162,14 @@ export default function CalendarView({ watches, onStopOthers, onBack }) {
             );
           })}
         </div>
+
+        <p style={{ color: 'var(--text-dim)', fontSize: 10, marginTop: 10, textAlign: 'center' }}>
+          Tap a date with watches to manage · Tap an empty date to add a watch
+        </p>
       </div>
 
       {selectedDate && (
-        <div style={{ marginTop: 20 }}>
+        <div style={{ marginTop: 16 }}>
           <p style={{ color: 'var(--gold)', fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
             {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </p>
