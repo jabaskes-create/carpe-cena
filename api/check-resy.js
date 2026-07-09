@@ -47,13 +47,22 @@ function timeToMinutes(hhmm) {
 
 async function fetchSlotsForDate(venueId, checkDate, partySize) {
   const availRes = await fetch(
-    `https://api.resy.com/4/find?lat=0&long=0&day=${checkDate}&party_size=${partySize}&venue_id=${venueId}`,
+    'https://api.resy.com/4/find',
     {
+      method: 'POST',
       headers: {
         'Authorization': `ResyAPI api_key="${process.env.RESY_API_KEY}"`,
         'X-Origin': 'https://resy.com',
         'X-Resy-Auth-Token': process.env.RESY_AUTH_TOKEN || '',
-      }
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        lat: 0,
+        long: 0,
+        day: checkDate,
+        party_size: parseInt(partySize),
+        venue_id: venueId,
+      })
     }
   );
   const text = await availRes.text();
@@ -61,7 +70,7 @@ async function fetchSlotsForDate(venueId, checkDate, partySize) {
     const availData = JSON.parse(text);
     return availData?.results?.venues?.[0]?.slots || [];
   } catch {
-    throw new Error(`Resy API returned non-JSON (status ${availRes.status}): ${text.slice(0, 120)}`);
+    throw new Error(`Resy /4/find returned non-JSON (status ${availRes.status}): ${text.slice(0, 120)}`);
   }
 }
 
@@ -71,22 +80,33 @@ export async function checkResy(watch) {
 
     // Step 1: Search for venue (only need to do this once)
     const searchRes = await fetch(
-      `https://api.resy.com/3/venue/search?query=${encodeURIComponent(restaurant)}&location=${encodeURIComponent(city)}&limit=5`,
+      'https://api.resy.com/3/venuesearch/search',
       {
+        method: 'POST',
         headers: {
           'Authorization': `ResyAPI api_key="${process.env.RESY_API_KEY}"`,
           'X-Origin': 'https://resy.com',
-        }
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          geo: { latitude: 0, longitude: 0 },
+          highlight: { pre_tag: '<b>', post_tag: '</b>' },
+          per_page: 5,
+          query: restaurant,
+          slot_filter: { day: date, party_size: parseInt(partySize) },
+          types: ['venue', 'cuisine'],
+        })
       }
     );
     const searchText = await searchRes.text();
-let searchData;
-try {
-  searchData = JSON.parse(searchText);
-} catch {
-  return { available: false, reason: `Resy search returned non-JSON (status ${searchRes.status}): ${searchText.slice(0, 120)}` };
-}
-const venues = searchData?.search?.hits;
+    let searchData;
+    try {
+      searchData = JSON.parse(searchText);
+    } catch {
+      return { available: false, reason: `Resy search returned non-JSON (status ${searchRes.status}): ${searchText.slice(0, 120)}` };
+    }
+
+    const venues = searchData?.search?.hits;
     if (!venues || venues.length === 0) return { available: false, reason: 'Venue not found' };
 
     const venue = venues[0];
