@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="100" fill="#ffffff"/>
+  
+  <!-- Bullseye rings - classic with blue outer ring -->
+  <circle cx="256" cy="256" r="240" fill="#1a4f9c"/>
+  <circle cx="256" cy="256" r="192" fill="#cc0000"/>
+  <circle cx="256" cy="256" r="144" fill="#ffffff"/>
+  <circle cx="256" cy="256" r="96" fill="#cc0000"/>
+  <circle cx="256" cy="256" r="48" fill="#cc0000"/>
+  <circle cx="256" cy="256" r="48" fill="#1a4f9c"/>
+
+  <!-- Fork -->
+  <g transform="translate(185, 110)">
+    <rect x="26" y="180" width="16" height="120" rx="8" fill="#222222"/>
+    <rect x="14" y="60" width="8" height="90" rx="4" fill="#222222"/>
+    <rect x="26" y="60" width="8" height="90" rx="4" fill="#222222"/>
+    <rect x="38" y="60" width="8" height="90" rx="4" fill="#222222"/>
+    <rect x="20" y="148" width="20" height="36" rx="4" fill="#222222"/>
+    <rect x="14" y="44" width="8" height="20" rx="4" fill="#222222"/>
+    <rect x="26" y="44" width="8" height="20" rx="4" fill="#222222"/>
+    <rect x="38" y="44" width="8" height="20" rx="4" fill="#222222"/>
+  </g>
+
+  <!-- Knife -->
+  <g transform="translate(295, 110)">
+    <rect x="14" y="180" width="16" height="120" rx="8" fill="#222222"/>
+    <path d="M14 60 Q44 80 30 175 L14 175 Z" fill="#222222"/>
+  </g>
+</svg>
