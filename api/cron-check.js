@@ -191,7 +191,8 @@ async function processWatch(watch, today) {
 
       return { id: watch.id, restaurant: watch.restaurant, available: true };
     } else {
-      return { id: watch.id, restaurant: watch.restaurant, available: false, reason: result.reason };
+      await db.collection('watches').doc(watch.id).update({ lastCheckReason: result.reason || 'No availability found' });
+return { id: watch.id, restaurant: watch.restaurant, available: false, reason: result.reason };
     }
   } catch (err) {
     return { id: watch.id, restaurant: watch.restaurant, available: false, error: err.message };

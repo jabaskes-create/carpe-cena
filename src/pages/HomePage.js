@@ -8,9 +8,8 @@ import {
 import WatchCard from '../components/WatchCard';
 import AddWatchModal from '../components/AddWatchModal';
 import CalendarView from '../components/CalendarView';
+import SettingsModal from '../components/SettingsModal';
 
-// Every calendar date a watch is actively covering — mirrors the same
-// logic used in CalendarView so both agree on what a watch "covers".
 function datesCoveredByWatch(watch) {
   const numDays = Math.max(1, parseInt(watch.flexDays) || 1);
   const start = new Date(watch.date + 'T12:00:00');
@@ -35,7 +34,8 @@ export default function HomePage() {
   const [watches, setWatches] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [editingWatch, setEditingWatch] = useState(null);
-  const [view, setView] = useState('list'); // 'list' | 'calendar'
+  const [showSettings, setShowSettings] = useState(false);
+  const [view, setView] = useState('list');
   const user = auth.currentUser;
 
   useEffect(() => {
@@ -60,9 +60,6 @@ export default function HomePage() {
 
   const saveEditedWatch = async (data) => {
     const { id, ...fields } = data;
-    // Editing implies the person wants fresh eyes on this watch —
-    // reset it back to "watching" so it re-enters the check cycle
-    // rather than sitting stale in "Completed" with an outdated match.
     await updateDoc(doc(db, 'watches', id), {
       ...fields,
       status: 'watching',
@@ -90,10 +87,6 @@ export default function HomePage() {
     setEditingWatch(null);
   };
 
-  // Stop searching for ONE specific date across every watch that covers it.
-  // A watch that still has other dates left just gets this one added to its
-  // exclusion list and keeps running. A watch whose only remaining date was
-  // this one gets deleted entirely, since there's nothing left to watch.
   const stopDateForWatches = async (dateISO, _unused, watchesOnThatDate) => {
     if (watchesOnThatDate.length === 0) return;
 
@@ -107,7 +100,6 @@ export default function HomePage() {
     await Promise.all(watchesOnThatDate.map(async (w) => {
       const remainingDates = datesCoveredByWatch(w).filter(d => d !== dateISO);
       if (remainingDates.length === 0) {
-        // Nothing left to watch for this restaurant — remove it entirely
         await deleteDoc(doc(db, 'watches', w.id));
       } else {
         const nextExcluded = Array.isArray(w.excludedDates) ? [...w.excludedDates, dateISO] : [dateISO];
@@ -116,12 +108,8 @@ export default function HomePage() {
     }));
   };
 
-  // Only show watches whose target date hasn't passed yet.
-  // Once the date passes, the watch quietly drops off the list —
-  // no need to keep cluttering the screen with old entries.
   const todayStart = new Date(new Date().toDateString());
   const upcoming = watches.filter(w => new Date(w.date) >= todayStart);
-
   const watching = upcoming.filter(w => w.status === 'watching');
   const completed = upcoming.filter(w => w.status === 'available' || w.status === 'booked');
 
@@ -135,11 +123,20 @@ export default function HomePage() {
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 2 }}>Seize the dinner</p>
         </div>
-        <button onClick={() => signOut(auth)} style={{
-          background: 'transparent', color: 'var(--text-dim)', fontSize: 13
-        }}>
-          Sign out
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={() => setShowSettings(true)}
+            style={{ background: 'transparent', color: 'var(--text-dim)', fontSize: 18 }}
+            title="Settings"
+          >
+            ⚙️
+          </button>
+          <button onClick={() => signOut(auth)} style={{
+            background: 'transparent', color: 'var(--text-dim)', fontSize: 13
+          }}>
+            Sign out
+          </button>
+        </div>
       </div>
 
       {view === 'list' && (
@@ -197,7 +194,6 @@ export default function HomePage() {
         />
       ) : (
         <>
-          {/* Watching section */}
           <div style={{ marginBottom: watching.length && completed.length ? 32 : 0 }}>
             <p style={{ color: 'var(--text-dim)', fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>
               👁 Watching {watching.length > 0 && `(${watching.length})`}
@@ -213,14 +209,13 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* Completed section */}
           {completed.length > 0 && (
             <div>
               <p style={{ color: 'var(--green)', fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>
                 ✓ Completed ({completed.length})
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {completed.map(w => <WatchCard key={w.id} watch={w} onDelete={deleteWatch} onEdit={openEdit} />)}
+                {completed.map(w => <WatchCard key={w.id} watch={w} onDelete={deleteWatch} onEdit={openEdit} isPast={false} />)}
               </div>
             </div>
           )}
@@ -232,6 +227,13 @@ export default function HomePage() {
           onSave={editingWatch ? saveEditedWatch : addWatch}
           onClose={closeModal}
           editingWatch={editingWatch}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsModal
+          user={user}
+          onClose={() => setShowSettings(false)}
         />
       )}
     </div>
