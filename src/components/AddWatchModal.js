@@ -428,14 +428,14 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
             </div>
           ) : (
             <div>
-              <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                Booking URL <span style={{ color: 'var(--text-dim)', fontWeight: 'normal' }}>(optional)</span>
-              </p>
-              <input
-                placeholder="Paste direct booking link for email button"
-                value={form.bookingUrl}
-                onChange={e => set('bookingUrl', e.target.value)}
-              />
+             <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+  Booking URL {form.platform === 'resy' ? <span style={{ color: '#ff8a75', fontWeight: 'normal' }}>(required for Resy)</span> : <span style={{ color: 'var(--text-dim)', fontWeight: 'normal' }}>(optional)</span>}
+</p>
+<input
+  placeholder={form.platform === 'resy' ? 'Paste Resy URL — e.g. resy.com/cities/columbus-oh/venues/mezcla' : 'Paste direct booking link for email button'}
+  value={form.bookingUrl}
+  onChange={e => set('bookingUrl', e.target.value)}
+/>
             </div>
           )}
 
