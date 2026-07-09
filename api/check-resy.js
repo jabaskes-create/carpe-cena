@@ -78,42 +78,85 @@ export async function checkResy(watch) {
   try {
     const { city, restaurant, date, partySize, flexDays, allowedWeekdays, dayPriority, idealTime, toleranceMinutes, timeFrom, timeTo } = watch;
 
-    // Step 1: Search for venue (only need to do this once)
-    const searchRes = await fetch(
-      'https://api.resy.com/3/venuesearch/search',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `ResyAPI api_key="${process.env.RESY_API_KEY}"`,
-          'X-Origin': 'https://resy.com',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          geo: { latitude: 0, longitude: 0 },
-          highlight: { pre_tag: '<b>', post_tag: '</b>' },
-          per_page: 5,
-          query: `${restaurant} ${city}`,
-          slot_filter: { day: date, party_size: parseInt(partySize) },
-          types: ['venue', 'cuisine'],
-        })
+    // Step 1: Resolve venue ID
+    // Prefer direct slug lookup from bookingUrl — avoids unreliable search
+    let venueId = null;
+    let resolvedSlug = null;
+    let locationCode = null;
+
+    if (watch.bookingUrl) {
+      const match = watch.bookingUrl.match(/resy\.com\/cities\/([^/]+)\/venues\/([^/?]+)/);
+      if (match) {
+        locationCode = match[1]; // e.g. "columbus-oh"
+        resolvedSlug = match[2]; // e.g. "mezcla"
       }
-    );
-    const searchText = await searchRes.text();
-    let searchData;
-    try {
-      searchData = JSON.parse(searchText);
-    } catch {
-      return { available: false, reason: `Resy search returned non-JSON (status ${searchRes.status}): ${searchText.slice(0, 120)}` };
     }
 
-    const venues = searchData?.search?.hits;
-    if (!venues || venues.length === 0) return { available: false, reason: 'Venue not found' };
+    if (resolvedSlug && locationCode) {
+      // Direct venue lookup by slug
+      const venueRes = await fetch(
+        `https://api.resy.com/3/venue?url_slug=${resolvedSlug}&location=${locationCode}`,
+        {
+          headers: {
+            'Authorization': `ResyAPI api_key="${process.env.RESY_API_KEY}"`,
+            'X-Origin': 'https://resy.com',
+            'X-Resy-Auth-Token': process.env.RESY_AUTH_TOKEN || '',
+          }
+        }
+      );
+      const venueText = await venueRes.text();
+      try {
+        const venueData = JSON.parse(venueText);
+        venueId = venueData?.id?.resy;
+        resolvedSlug = venueData?.url_slug || resolvedSlug;
+      } catch {
+        return { available: false, reason: `Resy venue lookup returned non-JSON (status ${venueRes.status}): ${venueText.slice(0, 120)}` };
+      }
+    } else {
+      // Fall back to search if no bookingUrl provided
+      const searchRes = await fetch(
+        'https://api.resy.com/3/venuesearch/search',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `ResyAPI api_key="${process.env.RESY_API_KEY}"`,
+            'X-Origin': 'https://resy.com',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            geo: { latitude: 0, longitude: 0 },
+            highlight: { pre_tag: '<b>', post_tag: '</b>' },
+            per_page: 5,
+            query: `${restaurant} ${city}`,
+            slot_filter: { day: date, party_size: parseInt(partySize) },
+            types: ['venue', 'cuisine'],
+          })
+        }
+      );
+      const searchText = await searchRes.text();
+      let searchData;
+      try {
+        searchData = JSON.parse(searchText);
+      } catch {
+        return { available: false, reason: `Resy search returned non-JSON (status ${searchRes.status}): ${searchText.slice(0, 120)}` };
+      }
+      const venues = searchData?.search?.hits;
+      if (!venues || venues.length === 0) {
+        return { available: false, reason: 'Venue not found — try adding the Resy booking URL to this watch (e.g. resy.com/cities/columbus-oh/venues/mezcla)' };
+      }
+      const venue = venues[0];
+      venueId = venue.id?.resy;
+      resolvedSlug = venue.url_slug;
+      locationCode = venue.location?.url_slug;
+    }
 
-    const venue = venues[0];
-    const venueId = venue.id?.resy;
-    if (!venueId) return { available: false, reason: 'No venue ID' };
+    if (!venueId) {
+      return { available: false, reason: 'Could not resolve Resy venue ID — try adding the Resy booking URL to this watch' };
+    }
 
-    const bookingUrl = `https://resy.com/cities/${encodeURIComponent(city.toLowerCase())}/${venue.url_slug || ''}`;
+    const bookingUrl = watch.bookingUrl
+      || `https://resy.com/cities/${locationCode}/venues/${resolvedSlug}?date=${date}&seats=${partySize}`;
+
     const numDays = Math.max(1, parseInt(flexDays) || 1);
 
     // Determine time window: prefer the new ideal-time+tolerance model,
@@ -147,7 +190,6 @@ export async function checkResy(watch) {
     }
 
     // Drop any dates the person explicitly said to stop watching
-    // (e.g. via the calendar's "got a reservation elsewhere" action)
     if (Array.isArray(watch.excludedDates) && watch.excludedDates.length > 0) {
       datesToCheck = datesToCheck.filter(d => !watch.excludedDates.includes(d));
     }
