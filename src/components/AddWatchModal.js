@@ -4,7 +4,6 @@ const PLATFORMS = [
   { value: 'resy', label: 'Resy' },
   { value: 'opentable', label: 'OpenTable' },
   { value: 'sevenrooms', label: 'SevenRooms' },
-  { value: 'tock', label: 'Tock' },
   { value: 'thefork', label: 'TheFork' },
 ];
 
@@ -32,7 +31,6 @@ function formatTime(t) {
   return `${hour}:${m.toString().padStart(2, '0')}${ampm}`;
 }
 
-// Extracts the venue slug from a SevenRooms URL
 function extractSevenRoomsSlug(url) {
   if (!url) return '';
   try {
@@ -48,7 +46,6 @@ function isGoogleMapsReserveUrl(url) {
   return /google\.com\/maps\/reserve/i.test(url || '');
 }
 
-// Mini calendar component
 function CalendarPicker({ value, onChange }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -152,23 +149,16 @@ const emptyForm = {
   date: '',
   partySize: 2,
   platform: 'resy',
-  autoBook: false,
-  guestFirstName: '',
-  guestLastName: '',
-  guestPhone: '',
-  cardLast4: '',
   windowDays: '',
   furthestBookableDate: '',
   furthestBookableObservedAt: '',
   bookingUrl: '',
   venueSlug: '',
   flexDays: 1,
-  // New rank-based model
   dayPriority: [],
   excludedDates: [],
   idealTime: '19:00',
   toleranceMinutes: 60,
-  // Legacy fields, kept in sync for older checker code paths and old watches
   timeFrom: '18:00',
   timeTo: '21:00',
   allowedWeekdays: [0, 1, 2, 3, 4, 5, 6],
@@ -196,16 +186,10 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
     setForm(f => ({ ...f, bookingUrl: url, venueSlug: slug || f.venueSlug }));
   };
 
-  // Tapping a day appends it to the end of the priority list (or removes it
-  // if already ranked). Order of taps IS the preference order — no drag
-  // handles needed.
   const toggleDayPriority = (day) => {
     setForm(f => {
       const has = f.dayPriority.includes(day);
       const nextPriority = has ? f.dayPriority.filter(d => d !== day) : [...f.dayPriority, day];
-      // Keep legacy allowedWeekdays in sync: if any days are ranked, only
-      // those are "allowed"; if none are ranked, all days are allowed
-      // (matches the old default-all-days behavior).
       const nextAllowed = nextPriority.length === 0 ? [0,1,2,3,4,5,6] : nextPriority;
       return { ...f, dayPriority: nextPriority, allowedWeekdays: nextAllowed };
     });
@@ -216,8 +200,6 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
   const handleSave = async () => {
     if (!valid) return;
     setSaving(true);
-    // Derive legacy timeFrom/timeTo from the new ideal-time + tolerance
-    // model, so checkers that haven't been updated yet still work sensibly.
     const [ih, im] = form.idealTime.split(':').map(Number);
     const idealMins = ih * 60 + im;
     const fromMins = Math.max(0, idealMins - form.toleranceMinutes);
@@ -293,7 +275,7 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
             )}
           </div>
 
-          {/* Day priority — tap in the order you'd prefer them */}
+          {/* Day priority */}
           {form.flexDays > 1 && (
             <div>
               <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
@@ -343,7 +325,7 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
             </div>
           )}
 
-          {/* Ideal time + tolerance, replacing a plain start/end range */}
+          {/* Ideal time + tolerance */}
           <div>
             <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
               Ideal time
@@ -386,9 +368,6 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
                 value={form.furthestBookableDate || ''}
                 onChange={e => {
                   set('furthestBookableDate', e.target.value);
-                  // Capture "today" as the observation date — this anchors
-                  // the lead-time calculation regardless of when the watch
-                  // is later edited or re-saved.
                   set('furthestBookableObservedAt', e.target.value ? new Date().toISOString().split('T')[0] : '');
                 }}
               />
@@ -428,64 +407,18 @@ export default function AddWatchModal({ onSave, onClose, editingWatch }) {
             </div>
           ) : (
             <div>
-             <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-  Booking URL {form.platform === 'resy' ? <span style={{ color: '#ff8a75', fontWeight: 'normal' }}>(required for Resy)</span> : <span style={{ color: 'var(--text-dim)', fontWeight: 'normal' }}>(optional)</span>}
-</p>
-<input
-  placeholder={form.platform === 'resy' ? 'Paste Resy URL — e.g. resy.com/cities/columbus-oh/venues/mezcla' : 'Paste direct booking link for email button'}
-  value={form.bookingUrl}
-  onChange={e => set('bookingUrl', e.target.value)}
-/>
-            </div>
-          )}
-
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-secondary)', fontSize: 14, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={form.autoBook}
-              onChange={e => set('autoBook', e.target.checked)}
-              style={{ width: 'auto' }}
-            />
-            Auto-book when available (SevenRooms only, currently in testing)
-          </label>
-
-          {form.autoBook && (
-            <div style={{
-              background: 'rgba(201, 168, 76, 0.08)', border: '1px solid var(--gold-dim)',
-              borderRadius: 8, padding: 14
-            }}>
-              <p style={{ color: 'var(--gold)', fontSize: 12, fontWeight: 700, marginBottom: 10 }}>
-                ⚠️ Auto-booking is in dry-run testing — it will log what it would book, but won't actually reserve anything yet.
+              <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                Booking URL {form.platform === 'resy'
+                  ? <span style={{ color: '#ff8a75', fontWeight: 'normal' }}>(required for Resy)</span>
+                  : <span style={{ color: 'var(--text-dim)', fontWeight: 'normal' }}>(optional)</span>}
               </p>
-              <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-                <input
-                  placeholder="First name"
-                  value={form.guestFirstName || ''}
-                  onChange={e => set('guestFirstName', e.target.value)}
-                  style={{ flex: 1 }}
-                />
-                <input
-                  placeholder="Last name"
-                  value={form.guestLastName || ''}
-                  onChange={e => set('guestLastName', e.target.value)}
-                  style={{ flex: 1 }}
-                />
-              </div>
               <input
-                placeholder="Phone number"
-                value={form.guestPhone || ''}
-                onChange={e => set('guestPhone', e.target.value)}
-                style={{ marginBottom: 10 }}
+                placeholder={form.platform === 'resy'
+                  ? 'Paste Resy URL — e.g. resy.com/cities/columbus-oh/venues/mezcla'
+                  : 'Paste direct booking link for email button'}
+                value={form.bookingUrl}
+                onChange={e => set('bookingUrl', e.target.value)}
               />
-              <input
-                placeholder="Card last 4 digits (only needed for some reservations)"
-                value={form.cardLast4 || ''}
-                onChange={e => set('cardLast4', e.target.value)}
-                maxLength={4}
-              />
-              <p style={{ color: 'var(--text-secondary)', fontSize: 11, marginTop: 8 }}>
-                We never store your full card number — only the last 4 digits, used to reference a card already saved on your SevenRooms account.
-              </p>
             </div>
           )}
 
