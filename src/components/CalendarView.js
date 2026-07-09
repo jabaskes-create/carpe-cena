@@ -64,32 +64,17 @@ export default function CalendarView({ watches, onStopOthers, onBack, onAddWatch
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
   const selectedWatches = selectedDate ? (dateMap[selectedDate] || []) : [];
-  const isPastDate = (iso) => iso < todayISO;
 
   const handleDayClick = (iso) => {
-    const dayWatches = dateMap[iso] || [];
-    if (dayWatches.length === 0 && !isPastDate(iso)) {
-      // Empty future date — open Add Watch with date pre-filled
-      onAddWatch && onAddWatch(iso);
-    } else {
-      setSelectedDate(selectedDate === iso ? null : iso);
-    }
+    if (iso < todayISO) return;
+    setSelectedDate(selectedDate === iso ? null : iso);
   };
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <button onClick={onBack} style={{ background: 'transparent', color: 'var(--gold)', fontSize: 13, fontWeight: 600 }}>
           ← List view
-        </button>
-        <button
-          onClick={() => onAddWatch && onAddWatch(null)}
-          style={{
-            background: 'var(--gold)', color: '#0f0e0c',
-            fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 8,
-          }}
-        >
-          + Watch a Restaurant
         </button>
       </div>
 
@@ -118,32 +103,31 @@ export default function CalendarView({ watches, onStopOthers, onBack, onAddWatch
             const dayWatches = dateMap[iso] || [];
             const isToday = iso === todayISO;
             const isSelected = selectedDate === iso;
-            const isPast = isPastDate(iso);
+            const isPast = iso < todayISO;
             const hasCompleted = dayWatches.some(w => w.status === 'available' || w.status === 'booked');
-            const isEmpty = dayWatches.length === 0;
 
             return (
               <button
                 key={day}
                 onClick={() => handleDayClick(iso)}
-                disabled={isPast && isEmpty}
+                disabled={isPast}
                 style={{
                   height: 44,
                   background: isSelected ? 'var(--gold)' : isToday ? 'var(--bg-secondary)' : 'transparent',
-                  border: `1px solid ${isSelected ? 'var(--gold)' : isEmpty && !isPast ? 'var(--border)' : 'var(--border)'}`,
+                  border: `1px solid ${isSelected ? 'var(--gold)' : 'var(--border)'}`,
                   borderRadius: 6,
                   padding: 3,
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'flex-start',
-                  cursor: isPast && isEmpty ? 'default' : 'pointer',
-                  opacity: isPast && isEmpty ? 0.3 : 1,
+                  cursor: isPast ? 'default' : 'pointer',
+                  opacity: isPast ? 0.3 : 1,
                 }}
               >
                 <span style={{
                   fontSize: 12,
-                  color: isSelected ? '#0f0e0c' : isEmpty && !isPast ? 'var(--text-dim)' : 'var(--text-primary)',
+                  color: isSelected ? '#0f0e0c' : 'var(--text-primary)',
                   fontWeight: hasCompleted ? 700 : 400,
                 }}>
                   {day}
@@ -164,7 +148,7 @@ export default function CalendarView({ watches, onStopOthers, onBack, onAddWatch
         </div>
 
         <p style={{ color: 'var(--text-dim)', fontSize: 10, marginTop: 10, textAlign: 'center' }}>
-          Tap a date with watches to manage · Tap an empty date to add a watch
+          Tap any future date to view or add watches
         </p>
       </div>
 
@@ -175,7 +159,9 @@ export default function CalendarView({ watches, onStopOthers, onBack, onAddWatch
           </p>
 
           {selectedWatches.length === 0 ? (
-            <p style={{ color: 'var(--text-dim)', fontSize: 13, fontStyle: 'italic' }}>No watches covering this date.</p>
+            <p style={{ color: 'var(--text-dim)', fontSize: 13, fontStyle: 'italic', marginBottom: 16 }}>
+              No watches for this date.
+            </p>
           ) : (
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
@@ -205,16 +191,28 @@ export default function CalendarView({ watches, onStopOthers, onBack, onAddWatch
                   width: '100%',
                   background: 'transparent', border: '1px solid var(--gold-dim)',
                   color: 'var(--gold)', fontSize: 13, fontWeight: 600,
-                  padding: '10px 14px', borderRadius: 8,
+                  padding: '10px 14px', borderRadius: 8, marginBottom: 8,
                 }}
               >
                 Stop searching for this date — {selectedWatches.length === 1 ? '1 restaurant' : `${selectedWatches.length} restaurants`}
               </button>
-              <p style={{ color: 'var(--text-dim)', fontSize: 11, marginTop: 8, lineHeight: 1.5 }}>
+              <p style={{ color: 'var(--text-dim)', fontSize: 11, marginBottom: 16, lineHeight: 1.5 }}>
                 Only removes {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} from these watches. Any other dates they cover keep being checked as normal.
               </p>
             </>
           )}
+
+          <button
+            onClick={() => onAddWatch && onAddWatch(selectedDate)}
+            style={{
+              width: '100%',
+              background: 'var(--gold)', color: '#0f0e0c',
+              fontSize: 13, fontWeight: 600,
+              padding: '10px 14px', borderRadius: 8,
+            }}
+          >
+            + Add new watch for this date
+          </button>
         </div>
       )}
     </div>
