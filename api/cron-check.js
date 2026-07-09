@@ -4,7 +4,6 @@ import { Resend } from 'resend';
 import { checkResy } from './check-resy.js';
 import { checkSevenRooms } from './check-sevenrooms.js';
 import { checkOpenTableReal } from './check-opentable-mcp.js';
-import { bookSevenRoomsReservation } from './book-sevenrooms.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
@@ -146,12 +145,6 @@ async function processWatch(watch, today) {
     }
 
     if (result.available) {
-      let bookingAttempt = null;
-      if (watch.autoBook && watch.platform === 'sevenrooms' && result.bookingFields) {
-        bookingAttempt = await bookSevenRoomsReservation(watch, result);
-        console.log(`Auto-book attempt for ${watch.restaurant}:`, JSON.stringify(bookingAttempt));
-      }
-
       const email = watch.email;
 
       if (email) {
@@ -164,23 +157,10 @@ async function processWatch(watch, today) {
         const isWindowAlert = result.windowJustOpened;
         const isFlexible = (parseInt(watch.flexDays) || 1) > 1;
 
-        let bookingStatusHtml = '';
-        if (bookingAttempt) {
-          if (bookingAttempt.booked && bookingAttempt.dryRun) {
-            bookingStatusHtml = `<p style="color: #c9a84c; font-size: 13px; margin-bottom: 16px; border: 1px solid #8a6f2e; border-radius: 6px; padding: 10px;">⚠️ Auto-book is in dry-run testing — this reservation was NOT actually booked. Please book manually using the link below.</p>`;
-          } else if (bookingAttempt.booked) {
-            bookingStatusHtml = `<p style="color: #2ecc71; font-size: 13px; margin-bottom: 16px;">✓ Automatically booked for you! Confirmation ID: ${bookingAttempt.reservationId}</p>`;
-          } else {
-            bookingStatusHtml = `<p style="color: #c0392b; font-size: 13px; margin-bottom: 16px; border: 1px solid #c0392b; border-radius: 6px; padding: 10px;">⚠️ Auto-book was enabled but failed: ${bookingAttempt.reason}. Please book manually using the link below.</p>`;
-          }
-        }
-
         await resend.emails.send({
           from: 'Carpe Cena <noreply@gullivertravels.app>',
           to: email,
-          subject: bookingAttempt?.booked && !bookingAttempt.dryRun
-            ? `✓ Booked: ${watch.restaurant} on ${dateStr}`
-            : isWindowAlert
+          subject: isWindowAlert
             ? `🍽️ Reservations now open: ${watch.restaurant} on ${dateStr}`
             : `🍽️ Book now: ${watch.restaurant} on ${dateStr}`,
           html: `
@@ -193,10 +173,9 @@ async function processWatch(watch, today) {
               <p style="font-size: 16px; margin-bottom: 8px;"><strong>${watch.restaurant}</strong></p>
               <p style="color: #9a9080; margin-bottom: 8px;">${watch.city} · ${dateStr} · ${watch.partySize} guests</p>
               ${isFlexible ? `<p style="color: #8a6f2e; font-size: 13px; margin-bottom: 16px;">Matched from your flexible ${watch.flexDays}-day window</p>` : ''}
-              ${bookingStatusHtml}
               ${result.bookingUrl ? `
                 <a href="${result.bookingUrl}" style="display: inline-block; background: #c9a84c; color: #0f0e0c; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-family: sans-serif; margin-top: 8px;">
-                  ${bookingAttempt?.booked && !bookingAttempt.dryRun ? 'View Reservation →' : 'Book Now →'}
+                  Book Now →
                 </a>
               ` : `<p style="color: #c9a84c;">Head to ${watch.platform} to book now.</p>`}
             </div>
@@ -205,17 +184,16 @@ async function processWatch(watch, today) {
       }
 
       await db.collection('watches').doc(watch.id).update({
-        status: (bookingAttempt?.booked && !bookingAttempt.dryRun) ? 'booked' : 'available',
+        status: 'available',
         matchedDate: result.matchedDate || watch.date,
         matchedTime: result.matchedTime || null,
       });
 
-      return { id: watch.id, restaurant: watch.restaurant, available: true, booked: bookingAttempt?.booked || false };
+      return { id: watch.id, restaurant: watch.restaurant, available: true };
     } else {
       return { id: watch.id, restaurant: watch.restaurant, available: false, reason: result.reason };
     }
   } catch (err) {
-    console.error(`Error processing watch ${watch.id} (${watch.restaurant}):`, err.message);
     return { id: watch.id, restaurant: watch.restaurant, available: false, error: err.message };
   }
 }
@@ -227,7 +205,6 @@ export default async function handler(req, res) {
   }
 
   const today = new Date().toISOString().split('T')[0];
-  console.log('Today:', today);
 
   const snap = await db.collection('watches')
     .where('status', '==', 'watching')
@@ -236,8 +213,6 @@ export default async function handler(req, res) {
   const watches = snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
     .filter(w => w.date >= today);
-
-  console.log(`Checking ${watches.length} active watches in parallel`);
 
   const results = await Promise.all(watches.map(watch => processWatch(watch, today)));
 
