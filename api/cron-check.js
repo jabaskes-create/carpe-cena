@@ -191,7 +191,8 @@ async function processWatch(watch, today) {
 
       return { id: watch.id, restaurant: watch.restaurant, available: true };
     } else {
-      await db.collection('watches').doc(watch.id).update({ lastCheckReason: result.reason || 'No availability found' });
+const simpleReason = result.reason?.includes('window') ? 'Booking window not yet open' : 'No availability found';
+await db.collection('watches').doc(watch.id).update({ lastCheckReason: simpleReason });
 return { id: watch.id, restaurant: watch.restaurant, available: false, reason: result.reason };
     }
   } catch (err) {
