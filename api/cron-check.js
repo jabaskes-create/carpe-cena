@@ -1,222 +1,231 @@
-import { initializeApp, cert, getApps } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-import { Resend } from 'resend';
-import { checkResy } from './check-resy.js';
-import { checkSevenRooms } from './check-sevenrooms.js';
-import { checkOpenTableReal } from './check-opentable-mcp.js';
+import { useState } from "react";
+import Icon from "./Icon";
+import { groupByDate, formatDateFull } from "../utils";
 
-if (!getApps().length) {
-  initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+const segmentEmoji = (type) => {
+  const map = { flight: "✈️", hotel: "🏨", restaurant: "🍽", activity: "⭐", train: "🚆", car: "🚗" };
+  return map[type] || "📍";
+};
+
+function formatTime(timeStr) {
+  if (!timeStr) return "";
+  const [h, m] = timeStr.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, "0")} ${period}`;
 }
 
-const db = getFirestore();
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-function addDays(dateStr, days) {
-  const d = new Date(dateStr + 'T12:00:00');
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
+function formatDateShort(dateStr) {
+  if (!dateStr) return "";
+  const [, mo, d] = dateStr.split("-").map(Number);
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${months[mo - 1]} ${d}`;
 }
 
-function daysBetween(dateStrA, dateStrB) {
-  const a = new Date(dateStrA + 'T12:00:00');
-  const b = new Date(dateStrB + 'T12:00:00');
-  return Math.round((b - a) / (1000 * 60 * 60 * 24));
+function formatDateRange(startDate, endDate) {
+  if (!startDate || !endDate) return "";
+  const [, m1, d1] = startDate.split("-").map(Number);
+  const [y2, m2, d2] = endDate.split("-").map(Number);
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${months[m1 - 1]} ${d1} — ${months[m2 - 1]} ${d2}, ${y2}`;
 }
 
-function dateInRange(startDate, days, weekday) {
-  for (let i = 0; i < days; i++) {
-    const d = i === 0 ? startDate : addDays(startDate, i);
-    if (new Date(d + 'T12:00:00').getDay() === weekday) return d;
+function buildItineraryText(trip, segments, selectedIds) {
+  const selected = segments.filter(s => selectedIds.has(s.id));
+  const grouped = groupByDate(selected);
+
+  let text = `${trip.name}\n`;
+  if (trip.startDate && trip.endDate) {
+    text += `${formatDateRange(trip.startDate, trip.endDate)}\n`;
   }
-  return null;
-}
+  text += `${"─".repeat(40)}\n\n`;
 
-function checkWindowDaysRange(watch, today, defaultDays) {
-  const numDays = Math.max(1, parseInt(watch.flexDays) || 1);
-  const todayDate = new Date(today + 'T12:00:00');
+  for (const [date, segs] of grouped) {
+    text += `${formatDateFull(date)}\n\n`;
+    for (const seg of segs) {
+      const isHotel = seg.type === "hotel";
 
-  let leadDays;
-  if (watch.furthestBookableDate && watch.furthestBookableObservedAt) {
-    leadDays = daysBetween(watch.furthestBookableObservedAt, watch.furthestBookableDate);
-  } else {
-    leadDays = parseInt(watch.windowDays) || defaultDays;
-  }
+      text += `${segmentEmoji(seg.type)} ${seg.title}`;
 
-  let datesToCheck = [];
-  if (Array.isArray(watch.dayPriority) && watch.dayPriority.length > 0) {
-    for (const weekday of watch.dayPriority) {
-      const d = dateInRange(watch.date, numDays, weekday);
-      if (d) datesToCheck.push(d);
-    }
-  } else {
-    for (let i = 0; i < numDays; i++) {
-      const checkDate = i === 0 ? watch.date : addDays(watch.date, i);
-      if (Array.isArray(watch.allowedWeekdays) && watch.allowedWeekdays.length < 7) {
-        const dow = new Date(checkDate + 'T12:00:00').getDay();
-        if (!watch.allowedWeekdays.includes(dow)) continue;
+      if (isHotel) {
+        // Hotels: show check-in/check-out dates inline, skip raw time
+        const checkIn = formatDateShort(seg.date);
+        const checkOut = seg.checkoutDate ? formatDateShort(seg.checkoutDate) : null;
+        if (checkOut) text += ` · ${checkIn} – ${checkOut}`;
+      } else if (seg.time) {
+        text += ` · ${formatTime(seg.time)}`;
       }
-      datesToCheck.push(checkDate);
-    }
-  }
+      text += "\n";
 
-  if (Array.isArray(watch.excludedDates) && watch.excludedDates.length > 0) {
-    datesToCheck = datesToCheck.filter(d => !watch.excludedDates.includes(d));
-  }
-
-  for (const checkDate of datesToCheck) {
-    const targetDate = new Date(checkDate + 'T12:00:00');
-    const windowOpens = new Date(targetDate);
-    windowOpens.setDate(windowOpens.getDate() - leadDays);
-    if (todayDate >= windowOpens) {
-      return { open: true, matchedDate: checkDate };
+      if (seg.address) text += `   📍 ${seg.address}\n`;
+      if (seg.detail) text += `   ${seg.detail}\n`;
+      if (seg.confirmation) text += `   🔖 Confirmation: ${seg.confirmation}\n`;
+      if (seg.phone) text += `   📞 ${seg.phone}\n`;
+      // URLs omitted — tracking links are too noisy for a human-readable export
+      text += "\n";
     }
   }
-  return { open: false };
+
+  text += `${"─".repeat(40)}\n`;
+  text += `Organized with Gulliver Travels · gullivertravels.app`;
+  return text;
 }
 
-function getCheckIntervalDays(watch, today) {
-  let referenceGapDays;
+export default function ExportModal({ trip, segments, onClose }) {
+  const [selectedIds, setSelectedIds] = useState(new Set(segments.map(s => s.id)));
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [toast, setToast] = useState("");
 
-  if (watch.furthestBookableDate && watch.furthestBookableObservedAt) {
-    const leadDays = daysBetween(watch.furthestBookableObservedAt, watch.furthestBookableDate);
-    const predictedOpenDate = addDays(watch.date, -leadDays);
-    referenceGapDays = daysBetween(today, predictedOpenDate);
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
-    if (referenceGapDays > 21) return 7;
-    if (referenceGapDays > 7) return 3;
-    return 1;
-  }
-
-  referenceGapDays = daysBetween(today, watch.date);
-  if (referenceGapDays > 30) return 7;
-  if (referenceGapDays > 7) return 4;
-  return 1;
-}
-
-function isCheckDueToday(watch, today) {
-  const interval = getCheckIntervalDays(watch, today);
-  const last = watch.lastAutoCheckedAt?.toDate ? watch.lastAutoCheckedAt.toDate() : null;
-  if (!last) return true;
-  const lastDateStr = last.toISOString().split('T')[0];
-  const elapsedDays = daysBetween(lastDateStr, today);
-  return elapsedDays >= interval;
-}
-
-async function processWatch(watch, today) {
-  try {
-    let result = { available: false };
-
-    if (watch.platform === 'resy') {
-      result = await checkResy(watch);
-
-    } else if (watch.platform === 'opentable') {
-      if (process.env.APIFY_API_TOKEN) {
-        if (isCheckDueToday(watch, today)) {
-          result = await checkOpenTableReal(watch);
-          await db.collection('watches').doc(watch.id).update({ lastAutoCheckedAt: new Date() });
-          if (result.confirmedRestaurantId && !watch.openTableRestaurantId) {
-            await db.collection('watches').doc(watch.id).update({ openTableRestaurantId: result.confirmedRestaurantId });
-          }
-        } else {
-          result = { available: false, reason: 'Not due for a check yet (adaptive schedule)' };
-        }
-      } else {
-        const windowCheck = checkWindowDaysRange(watch, today, 30);
-        if (windowCheck.open) {
-          const bookingUrl = watch.bookingUrl || `https://www.opentable.com/s?covers=${watch.partySize}&dateTime=${windowCheck.matchedDate}T${watch.timeFrom || '19:00'}&term=${encodeURIComponent(watch.restaurant)}&location=${encodeURIComponent(watch.city)}`;
-          result = { available: true, bookingUrl, matchedDate: windowCheck.matchedDate, windowJustOpened: true, reason: 'Booking window is open (real-time check not configured)' };
-        } else {
-          result = { available: false, reason: 'Booking window has not opened yet' };
-        }
-      }
-
-    } else if (watch.platform === 'thefork') {
-      const windowCheck = checkWindowDaysRange(watch, today, 60);
-      if (windowCheck.open) {
-        result = { available: true, bookingUrl: null, matchedDate: windowCheck.matchedDate, windowJustOpened: true };
-      }
-
-    } else if (watch.platform === 'sevenrooms') {
-      result = await checkSevenRooms(watch);
-      if (result.confirmedSlug && !watch.venueSlug) {
-        await db.collection('watches').doc(watch.id).update({ venueSlug: result.confirmedSlug });
-      }
-    }
-
-    if (result.available) {
-      const email = watch.email;
-
-      if (email) {
-        const matchedDate = result.matchedDate || watch.date;
-        const dateStr = new Date(matchedDate + 'T12:00:00').toLocaleDateString('en-US', {
-          weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
-        });
-
-        if (watch.bookingUrl) result.bookingUrl = watch.bookingUrl;
-        const isWindowAlert = result.windowJustOpened;
-        const isFlexible = (parseInt(watch.flexDays) || 1) > 1;
-
-        await resend.emails.send({
-          from: 'Carpe Cena <noreply@gullivertravels.app>',
-          to: email,
-          subject: isWindowAlert
-            ? `🍽️ Reservations now open: ${watch.restaurant} on ${dateStr}`
-            : `🍽️ Book now: ${watch.restaurant} on ${dateStr}`,
-          html: `
-            <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #0f0e0c; color: #f0ead8;">
-              <h1 style="color: #c9a84c; font-size: 24px; margin-bottom: 8px;">Carpe Cena</h1>
-              <p style="color: #9a9080; margin-bottom: 24px;">Seize the dinner</p>
-              <h2 style="font-size: 20px; margin-bottom: 16px;">
-                ${isWindowAlert ? 'Reservations are now open!' : 'A table is available!'}
-              </h2>
-              <p style="font-size: 16px; margin-bottom: 8px;"><strong>${watch.restaurant}</strong></p>
-              <p style="color: #9a9080; margin-bottom: 8px;">${watch.city} · ${dateStr} · ${watch.partySize} guests</p>
-              ${isFlexible ? `<p style="color: #8a6f2e; font-size: 13px; margin-bottom: 16px;">Matched from your flexible ${watch.flexDays}-day window</p>` : ''}
-              ${result.bookingUrl ? `
-                <a href="${result.bookingUrl}" style="display: inline-block; background: #c9a84c; color: #0f0e0c; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-family: sans-serif; margin-top: 8px;">
-                  Book Now →
-                </a>
-              ` : `<p style="color: #c9a84c;">Head to ${watch.platform} to book now.</p>`}
-            </div>
-          `
-        });
-      }
-
-      await db.collection('watches').doc(watch.id).update({
-        status: 'available',
-        matchedDate: result.matchedDate || watch.date,
-        matchedTime: result.matchedTime || null,
-      });
-
-      return { id: watch.id, restaurant: watch.restaurant, available: true };
+  const toggleAll = () => {
+    if (selectedIds.size === segments.length) {
+      setSelectedIds(new Set());
     } else {
-const simpleReason = result.reason?.includes('window') ? 'Booking window not yet open' : 'No availability found';
-await db.collection('watches').doc(watch.id).update({ lastCheckReason: simpleReason });
-return { id: watch.id, restaurant: watch.restaurant, available: false, reason: result.reason };
+      setSelectedIds(new Set(segments.map(s => s.id)));
     }
-  } catch (err) {
-    return { id: watch.id, restaurant: watch.restaurant, available: false, error: err.message };
-  }
-}
+  };
 
-export default async function handler(req, res) {
-  if (req.query.secret !== process.env.CRON_SECRET &&
-      req.headers['x-cron-secret'] !== process.env.CRON_SECRET) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  const toggleOne = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
-  const today = new Date().toISOString().split('T')[0];
+  const handleCopy = () => {
+    const text = buildItineraryText(trip, segments, selectedIds);
+    navigator.clipboard?.writeText(text);
+    showToast("Copied to clipboard!");
+  };
 
-  const snap = await db.collection('watches')
-    .where('status', '==', 'watching')
-    .get();
+  const handleDownload = () => {
+    const text = buildItineraryText(trip, segments, selectedIds);
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${trip.name.replace(/\s+/g, "-")}-itinerary.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Downloaded!");
+  };
 
-  const watches = snap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
-    .filter(w => w.date >= today);
+  const handleEmail = async () => {
+    if (!email) return;
+    setSending(true);
+    try {
+      const text = buildItineraryText(trip, segments, selectedIds);
+      const response = await fetch("/api/send-itinerary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: email,
+          tripName: trip.name,
+          itinerary: text,
+        }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        showToast(`Sent to ${email}!`);
+        setEmail("");
+      } else {
+        showToast(`Failed: ${data.error || "Unknown error"}`);
+      }
+    } catch (e) {
+      showToast(`Error: ${e.message}`);
+    }
+    setSending(false);
+  };
 
-  const results = await Promise.all(watches.map(watch => processWatch(watch, today)));
+  const grouped = groupByDate(segments);
 
-  return res.status(200).json({ checked: watches.length, results });
+  return (
+    <div className="modal-overlay">
+      <div className="modal">
+        <div className="modal-header">
+          <div className="modal-title">Export itinerary</div>
+          <button className="modal-close" onClick={onClose}><Icon name="close" size={14} /></button>
+        </div>
+
+        {/* Select all toggle */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: "var(--ink-light)" }}>
+            {selectedIds.size} of {segments.length} selected
+          </div>
+          <button className="seg-btn" onClick={toggleAll} style={{ fontSize: 11 }}>
+            {selectedIds.size === segments.length ? "Deselect all" : "Select all"}
+          </button>
+        </div>
+
+        {/* Segment checklist */}
+        <div style={{ maxHeight: 280, overflowY: "auto", marginBottom: 16, border: "1px solid var(--border)", borderRadius: "var(--radius-sm)" }}>
+          {grouped.map(([date, segs]) => (
+            <div key={date}>
+              <div style={{ padding: "6px 12px", background: "var(--paper-warm)", fontSize: 11, fontWeight: 500, color: "var(--ink-light)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                {formatDateFull(date)}
+              </div>
+              {segs.map(seg => (
+                <div
+                  key={seg.id}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: "1px solid var(--border)", cursor: "pointer" }}
+                  onClick={() => toggleOne(seg.id)}
+                >
+                  <div style={{
+                    width: 18, height: 18, borderRadius: 3, border: "1.5px solid var(--border)",
+                    background: selectedIds.has(seg.id) ? "var(--ink)" : "white",
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+                  }}>
+                    {selectedIds.has(seg.id) && (
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 14 }}>{segmentEmoji(seg.type)}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{seg.title}</div>
+                    {seg.time && <div style={{ fontSize: 11, color: "var(--ink-light)" }}>{seg.time}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+
+        {/* Export actions */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <button className="seg-btn" onClick={handleCopy} style={{ flex: 1, justifyContent: "center" }}>
+            📋 Copy
+          </button>
+          <button className="seg-btn" onClick={handleDownload} style={{ flex: 1, justifyContent: "center" }}>
+            ⬇️ Download
+          </button>
+        </div>
+
+        {/* Email */}
+        <div className="form-group">
+          <label className="form-label">Email itinerary</label>
+          <div className="share-row">
+            <input
+              className="form-input"
+              placeholder="recipient@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleEmail()}
+              style={{ flex: 1 }}
+            />
+            <button className="seg-btn primary" onClick={handleEmail} disabled={!email || sending}>
+              {sending ? "..." : "Send"}
+            </button>
+          </div>
+        </div>
+
+        {toast && <div className="toast">{toast}</div>}
+      </div>
+    </div>
+  );
 }
